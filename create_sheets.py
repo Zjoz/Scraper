@@ -17,7 +17,7 @@ from bs4 import BeautifulSoup
 from scraper_lib import ScrapeDB, DataSheet, setup_file_logging
 from scraper_lib import title, h1s, text, links
 
-# TODO: revise extraction by reading pages_attribs table (and checking on it)
+# TODO: revise extraction by reading pages_attribs table (and checking on it!)
 # TODO: where are the links from the breadcrumbs path?
 
 # ============================================================================ #

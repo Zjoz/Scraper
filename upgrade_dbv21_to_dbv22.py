@@ -7,7 +7,7 @@ from bs4 import BeautifulSoup
 from scraper_lib import ScrapeDB, setup_file_logging
 
 # ============================================================================ #
-timestamp = '200921-0430'   # determines the scrape that is used
+timestamp = '200924-1711'   # determines the scrape that is used
 within_bd = False           # True when running on the DWB
 # ============================================================================ #
 

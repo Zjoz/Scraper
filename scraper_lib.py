@@ -1,4 +1,4 @@
-"""Classes and functions for scraping www.belastingdienst.nl (version 2.3).
+"""Classes and functions for scraping www.belastingdienst.nl (version 2.4).
 
 Classes in this module:
 
@@ -35,12 +35,13 @@ import os
 import os.path
 import logging
 import requests
-from bs4 import BeautifulSoup
 import sqlite3
 import zlib
+from bs4 import BeautifulSoup
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.cell import WriteOnlyCell
+from datetime import date
 
 re_domain = re.compile(r'^https?://([\w-]*\.)*[\w-]*(?=/)')
 re_path = re.compile(r'^/[^/]')
@@ -76,20 +77,20 @@ class ScrapeDB:
                     doc     BLOB NOT NULL)''')
             self.exe('''
                 CREATE TABLE redirs (
-                    redir_id     INTEGER PRIMARY KEY AUTOINCREMENT,
-                    req_path     TEXT NOT NULL UNIQUE,
-                    resp_path    TEXT NOT NULL,
-                    type         TEXT)''')
+                    req_path   TEXT PRIMARY KEY NOT NULL UNIQUE,
+                    redir_path TEXT NOT NULL,
+                    type       TEXT)''')
             self.exe('''
                 CREATE TABLE parameters (
-                    name  TEXT NOT NULL UNIQUE,
-                    value TEXT NOT NULL,
-                    PRIMARY KEY(name))''')
-            self.exe('INSERT INTO parameters VALUES ("db_version", "2.1")')
+                    name  TEXT PRIMARY KEY NOT NULL UNIQUE,
+                    value TEXT NOT NULL)''')
+            self.exe('INSERT INTO parameters VALUES ("db_version", "2.2")')
+            logging.info('New scrape.db created')
         else:
             qry = 'SELECT value FROM parameters WHERE name = "db_version"'
             db_version = self.exe(qry).fetchone()[0]
-            if db_version != '2.1':
+            if db_version != '2.2':
+                logging.error(f'Incompatible database version: {db_version}')
                 raise sqlite3.DatabaseError(
                     f'Incompatible database version: {db_version}')
 
@@ -124,11 +125,14 @@ class ScrapeDB:
             path (str): path of the page; relative to root of scrape
 
         Returns:
-            str: doc string of the page
+            str|None: doc string of the page or None if not available
         """
         qry = 'SELECT doc FROM pages WHERE path = ?'
-        doc = self.exe(qry, [path]).fetchone()[0]
-        return zlib.decompress(doc).decode()
+        doc = self.exe(qry, [path]).fetchone()
+        if doc:
+            return zlib.decompress(doc[0]).decode()
+        else:
+            return None
 
     def pages(self):
         """Generator for all pages of a stored scrape.
@@ -138,11 +142,11 @@ class ScrapeDB:
         and the scraped page as string.
 
         Returns:
-            (str, str): page_path, page_string
+            (int, str, str): page_id, page_path, page_string
         """
-        qry = 'SELECT path, doc FROM pages'
-        for path, doc in self.exe(qry):
-            yield path, zlib.decompress(doc).decode()
+        qry = 'SELECT page_id, path, doc FROM pages'
+        for page_id, path, doc in self.exe(qry):
+            yield page_id, path, zlib.decompress(doc).decode()
 
     def num_pages(self):
         """Get total number of pages.
@@ -152,21 +156,21 @@ class ScrapeDB:
         """
         return self.exe('SELECT count(*) FROM pages').fetchone()[0]
 
-    def add_redir(self, req_path, resp_path, redir_type):
+    def add_redir(self, req_path, redir_path, redir_type):
         """Add a redirect to the database that occurred during a page scrape.
 
         Args:
             req_path (str):
-            resp_path (str):
+            redir_path (str):
             redir_type (int|str): characterisation of the redirect: status code
                 or textual
 
         Returns:
             int|None: id of the redirection if not yet saved, None otherwise
         """
-        qry = 'INSERT INTO redirs (req_path, resp_path, type) VALUES (?, ?, ?)'
+        qry = 'INSERT INTO redirs (req_path, redir_path, type) VALUES (?, ?, ?)'
         try:
-            return self.exe(qry, [req_path, resp_path, redir_type]).lastrowid
+            return self.exe(qry, [req_path, redir_path, redir_type]).lastrowid
         except sqlite3.IntegrityError:
             return None
 
@@ -174,16 +178,15 @@ class ScrapeDB:
         """Generator for all redirects of a stored scrape.
 
         Iterates over the redirects stored in the database, yielding a
-        threefold tuple containing: the requested path, the path of the
-        response and the type of the redirect. All paths are relative to the
-        root_url of the scrape.
+        threefold tuple containing: the requested path, the path and the type
+        of the redirect. All paths are relative to the root_url of the scrape.
 
         Returns:
-            (str, str, str): requested path, path of response, type of redirect
+            (str, str, str): requested path, path of redirect, type of redirect
         """
-        qry = 'SELECT req_path, resp_path, type FROM redirs'
-        for req_path, resp_path, redir_type in self.exe(qry):
-            yield req_path, resp_path, redir_type
+        qry = 'SELECT req_path, redir_path, type FROM redirs'
+        for req_path, redir_path, redir_type in self.exe(qry):
+            yield req_path, redir_path, redir_type
 
     def num_redirs(self):
         """Get total number of redirects.
@@ -215,6 +218,7 @@ class ScrapeDB:
         Returns:
             str|int|float: value of the parameter
         """
+        # TODO: check better on type
         qry = 'SELECT value FROM parameters WHERE name = ?'
         try:
             value = self.exe(qry, [name]).fetchone()[0]
@@ -228,6 +232,65 @@ class ScrapeDB:
             except ValueError:
                 pass
         return value
+
+    def new_attribs(self):
+        """Create new table and view to contain attributes of pages.
+
+        Existing table and view are deleted before the new ones are created.
+        The view that is created joins all pages with available attributes.
+
+        Returns:
+            None
+        """
+        self.exe('DROP TABLE IF EXISTS attribs')
+        self.exe('''
+            CREATE TABLE attribs (
+                page_id	 INTEGER PRIMARY KEY NOT NULL UNIQUE,
+                title	 TEXT,
+                num_h1s	 INTEGER,
+                first_h1 TEXT,
+                language TEXT,
+                mod_date TEXT,
+                type	 TEXT,
+                classes	 TEXT,
+                FOREIGN KEY (page_id)
+                REFERENCES pages (page_id)
+                    ON UPDATE RESTRICT
+                    ON DELETE RESTRICT)''')
+        self.exe('DROP VIEW IF EXISTS pages_attribs')
+        self.exe('''
+            CREATE VIEW pages_attribs AS
+                SELECT *
+                FROM pages
+                LEFT JOIN attribs USING (page_id)''')
+        logging.info(
+            'New attribs table and pages_attribs view created in scrape.db')
+
+    def add_attribs(self, path, title, num_h1s, first_h1,
+                       language, mod_date, type, classes):
+        """Add attributes for a page.
+
+        Args:
+            path (str): path of the page
+            title (str): title of the page
+            num_h1s (int): number of h1 tags in the page
+            first_h1 (str): text of the first h1 tag in the page
+            language (str): language of the page
+            mod_date (date): last modification date
+            type (str): page type
+            classes (str): page classes separated by spaces
+
+        Returns:
+            None
+        """
+        self.exe('''
+            INSERT INTO attribs
+                (page_id, title, num_h1s, first_h1,
+                language, mod_date, type, classes)
+            VALUES ((SELECT page_id FROM pages WHERE path = ?),
+                    ?, ?, ?, ?, ?, ?, ?)''',
+                [path, title, num_h1s, first_h1,
+                language, mod_date, type, classes])
 
 
 class DataSheet:
@@ -345,6 +408,9 @@ def scrape_page(root_url, req_url):
     Since there can be more than one redirect per requested page, the last
     element in the return tuple is a list of redirects instead of a single
     redirect (a 301 followed by a 302 does happen).
+    The first item in the returned tuple is the url that comes from the content
+    attribute of the <meta name="DCTERMS.identifier"> tag. This is the
+    definitive url as generated by the WCM system.
     All url's are absolute.
 
     Args:
@@ -353,19 +419,15 @@ def scrape_page(root_url, req_url):
         req_url (str): url of requested page
 
     Returns:
-        (str, BeautifulSoup, str, list):
-            url of the response,
+        (str, BeautifulSoup, str, list[str, str, str]):
+            definitive url of the page,
             bs4 representation of the page,
             complete page as string,
-            list of redirect str tuples: (req_url, resp_url, type)
+            list of requested url, url of the response, type of redirect
     """
-    resp_url = ''
     redirs = []
-    soup = None
-    page_as_string = ''
-    ready = False
 
-    while not ready:
+    while True:
         # cycle until no rewrites or redirects
         resp = requests.get(req_url)
         if resp.status_code != 200:
@@ -374,18 +436,19 @@ def scrape_page(root_url, req_url):
             raise requests.RequestException
 
         # read and parse the response into a soup document
-        resp_url = resp.url
+        # resp_url = resp.url
         page_as_string = resp.text
         soup = BeautifulSoup(page_as_string, features='lxml')
 
-        # are there redirects?
+        # are there any redirects?
         if len(resp.history) != 0:
             i_req_url = req_url
             for i_resp in resp.history:
                 if i_req_url.startswith(root_url):
                     # requested page is within scope of scrape
                     i_resp_url = i_resp.headers['Location']
-                    redirs.append((i_req_url, i_resp_url, i_resp.status_code))
+                    redir_type = f'redir {i_resp.status_code}'
+                    redirs.append((i_req_url, i_resp_url, redir_type))
                     if i_resp.status_code not in (301, 302):
                         # just to know if this occurs; probably not
                         logging.warning(
@@ -395,7 +458,7 @@ def scrape_page(root_url, req_url):
 
         # do we have a client-side redirect page via the next header tag?
         #       <meta http-equiv="refresh" content="0;url=...">
-        meta_tag = soup.find('meta', attrs={'http-equiv': 'refresh'})
+        meta_tag = soup.head.find('meta', attrs={'http-equiv': 'refresh'})
         if meta_tag:
             resp_url = meta_tag['content'].partition('url=')[2]
             # complete url if necessary
@@ -405,12 +468,36 @@ def scrape_page(root_url, req_url):
             elif re.match(re_network_path, resp_url):
                 protocol = re_protocol.match(root_url)[0]
                 resp_url = protocol + resp_url
-            redirs.append((req_url, resp_url, 'client-side'))
+            redirs.append((req_url, resp_url, 'client-side refresh'))
             req_url = resp_url
-        else:
-            ready = True
+            continue
 
-    return resp_url, soup, page_as_string, redirs
+        resp_url = resp.url
+        if resp_url.startswith(root_url):
+            # response url is within scope
+            meta_tag = soup.head.find(
+                'meta', attrs={'name': 'DCTERMS.identifier'})
+            if meta_tag:
+                def_url = meta_tag['content']
+                # complete path
+                if def_url.startswith('/wps/wcm/connect'):
+                    domain = re_domain.match(root_url)[0]
+                    def_url = domain + def_url
+                    if def_url != resp_url:
+                        redirs.append((resp_url, def_url, 'alias url'))
+                else:
+                    logging.warning('Non-standard definitive url; '
+                                    f'falling back to: {resp_url}')
+                    def_url = resp_url
+            else:
+                logging.error(
+                    f'Page without definitive url; falling back to: {resp_url}')
+                def_url = resp_url
+        else:
+            def_url = resp_url
+
+        # return implicitly ends while loop
+        return def_url, soup, page_as_string, redirs
 
 
 def valid_path(path):
@@ -512,16 +599,97 @@ def title(soup, url):
         url (str): url of the page; only used for logging
 
     Returns:
-        str: page title
+        str|None: page title or None if no title tag
     """
-    try:
-        ttl = soup.head.title.text
-    except AttributeError:
-        logging.warning(f'Page has no title tag: {url}')
-        return ''
+    ttl = soup.head.title
     if not ttl:
-        logging.warning(f'Page without title: {url}')
+        logging.warning(f'Page has no <title> tag: {url}')
+        return None
+    ttl = ttl.text
+    if not ttl:
+        logging.warning(f'Page with empty title: {url}')
     return ttl
+
+
+def language(soup, url):
+    """Retrieve the language of a page.
+
+    Args:
+        soup (BeautifulSoup): bs4 representation of a page
+        url (str): url of the page; only used for logging
+
+    Returns:
+        str|None: page language
+    """
+    lang = soup.head.find('meta', attrs={'name': 'language'})
+    if not lang:
+        logging.warning(f'Page has no <meta name="language"> tag: {url}')
+        return None
+    lang = lang['content']
+    if not lang:
+        logging.warning(f'Page with empy language: {url}')
+    return lang
+
+
+def mod_date(soup, url):
+    """Retrieve the modification date of a page.
+
+    Args:
+        soup (BeautifulSoup): bs4 representation of a page
+        url (str): url of the page; only used for logging
+
+    Returns:
+        date|None: modification date
+    """
+    md = soup.head.find('meta', attrs={'name': 'DCTERMS.modified'})
+    if not md:
+        logging.warning(
+            f'Page has no tag <meta name="DCTERMS.modified">: {url}')
+        return None
+    md = date.fromisoformat(md['content'])
+    if not md:
+        logging.warning(f'Page with empty modification date: {url}')
+    return md
+
+
+def page_type(soup, url):
+    """Retrieve the type of a page.
+
+    Args:
+        soup (BeautifulSoup): bs4 representation of a page
+        url (str): url of the page; only used for logging
+
+    Returns:
+        str|None: modification date
+    """
+    if 'data-pagetype' not in soup.body.attrs:
+        logging.warning(
+            f'Page has no data-pagetype attribute in the <body> tag: {url}')
+        return None
+    pt = soup.body['data-pagetype']
+    if not pt:
+        logging.warning(f'Page with empty page type: {url}')
+    return pt
+
+
+def classes(soup, url):
+    """Retrieve the classes of a page.
+
+    Args:
+        soup (BeautifulSoup): bs4 representation of a page
+        url (str): url of the page; only used for logging
+
+    Returns:
+         list[str]|None: list of classes
+    """
+    if 'class' not in soup.body.attrs:
+        logging.warning(
+            f'Page has no class attribute in the <body> tag: {url}')
+        return None
+    pc = soup.body['class']
+    if not pc:
+        logging.warning(f'Page with empty class: {url}')
+    return pc
 
 
 def h1s(soup, url):
@@ -532,19 +700,16 @@ def h1s(soup, url):
         url (str): url of the page; only used for logging
 
     Returns:
-        list: [h1-titles (str)] or [''] in case of no h1
+        list[str]|None: list of h1-titles or None in case of no h1
     """
     soup_list = soup.find_all('h1')
     num_h1s = len(soup_list)
-    h1_list = []
     if num_h1s == 0:
         logging.warning(f'Page without h1: {url}')
-        h1_list.append('')
-    else:
-        for h1 in soup_list:
-            h1_list.append(h1.text)
-        if num_h1s > 1:
-            logging.warning(f"Page with {num_h1s} h1's: {url}")
+        return None
+    h1_list = []
+    for h1 in soup_list:
+        h1_list.append(h1.text)
     return h1_list
 
 
@@ -579,7 +744,9 @@ def text(soup):
     if sc.body.footer:
         sc.body.footer.clear()
 
+    # get the text to return
+    txt = sc.body.get_text(separator='\n', strip=True)
+
     # remove the working copy of the soup doc
-    text = sc.body.get_text(separator='\n', strip=True)
     sc.decompose()
-    return text
+    return txt

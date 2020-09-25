@@ -1,10 +1,11 @@
-"""Scrape www.belastingdienst.nl and store the results (version 2.3).
+"""Scrape www.belastingdienst.nl and store the results (version 2.4).
 
-Since scraping is not possible from within the belastingdienst organisation,
-this module is supposed to run on a private pc with an open internet
-connection. Running this module will create a directory (at the location from
-where this module is executed) named '<date-and-timestamp> - bd-scrape'.
-After the scrape has finished this directory will contain the next files:
+Since scraping is not always possible from within the belastingdienst
+organisation, this module is supposed to run on a private pc with an open
+internet connection. Running this module will create a directory (at the
+location from where this module is executed) named '<date-and-timestamp> -
+bd-scrape'. After the scrape has finished this directory will contain the
+next files:
 
     'scrape.db': SQLite database with the results of the scrape
     'scrape.db-<nn>.txt': parts of scrape.db for text-based transmission
@@ -29,10 +30,9 @@ root_url of a scrape):
 
     redirs, with columns:
         redir_id: key to a specific redirect
-        req_path_id: requested path as relation to the paths table
-        resp_path_id: response path as relation to the paths table
-        type (text): nature of the redirect; might be the status code of the
-            response or 'client-side'
+        req_path: requested path
+        redir_path: path to where the request was directed
+        type (text): nature of the redirect
 """
 
 # TODO: add silent mode
@@ -52,7 +52,7 @@ from bd_viauu import bintouu, split_uufile
 # ============================================================================ #
 root_url = 'https://www.belastingdienst.nl/wps/wcm/connect'
 start_path = '/nl/home'
-max_paths = 10000  # total some 9000 actual
+max_paths = 12000  # total some 9000 actual
 publish = True
 publ_dir = '/var/www/bds/scrapes'
 # ============================================================================ #
@@ -91,29 +91,29 @@ while paths_todo and num_done < max_paths:
     req_path = paths_todo.pop()
     try:
         req_url = root_url + req_path
-        resp_url, soup, string_doc, redirs = scrape_page(root_url, req_url)
+        def_url, soup, string_doc, redirs = scrape_page(root_url, req_url)
     except RequestException:
         # handled and logged in scrape_page function; we consider this one done
         paths_done.add(req_path)
         continue
 
-    # if in scope, save page to db under the response path
-    resp_url_parts = resp_url.split(root_url)
-    if not resp_url_parts[0]:
+    # if in scope, save page to db under the definitive path
+    def_url_parts = def_url.split(root_url)
+    if not def_url_parts[0]:
         # url is within scope
-        resp_path = resp_url_parts[1]
-        page_id = db.add_page(resp_path, string_doc)
+        def_path = def_url_parts[1]
+        page_id = db.add_page(def_path, string_doc)
 
     # update paths_done admin and save redirects to db
     if redirs:
-        for req_url, resp_url, redir_type in redirs:
+        for req_url, red_url, redir_type in redirs:
             req_path = re.sub(root_url, '', req_url)
-            resp_path = re.sub(root_url, '', resp_url)
+            red_path = re.sub(root_url, '', red_url)
             if req_path.startswith('/'):
                 paths_done.add(req_path)
-            if resp_path.startswith('/'):
-                paths_done.add(resp_path)
-            redir_id = db.add_redir(req_path, resp_path, redir_type)
+            if red_path.startswith('/'):
+                paths_done.add(red_path)
+            redir_id = db.add_redir(req_path, red_path, redir_type)
     else:
         paths_done.add(req_path)
     num_done += 1
@@ -136,8 +136,8 @@ while paths_todo and num_done < max_paths:
 
 elapsed = int(time.time() - start_time)
 logging.info(f'Site scrape finished in {elapsed//60}:{elapsed % 60:02} min')
-logging.info(f'    pages: {db.num_pages()} rows')
-logging.info(f'    redirs: {db.num_redirs()} rows')
+logging.info(f'    pages: {db.num_pages()}')
+logging.info(f'    redirs: {db.num_redirs()}')
 
 db.close()
 

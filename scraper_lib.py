@@ -399,7 +399,8 @@ def setup_file_logging(directory, log_level=logging.INFO):
         filename=os.path.join(directory, 'log.txt'),
         format='[%(asctime)s] %(levelname)-8s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
-        level=log_level)
+        level=log_level,
+        force=True)
 
 
 def scrape_page(root_url, req_url):

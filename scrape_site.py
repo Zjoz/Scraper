@@ -1,4 +1,4 @@
-"""Scrape www.belastingdienst.nl and store the results (version 2.4).
+"""Scrape www.belastingdienst.nl and store the results (version 2.5).
 
 Since scraping is not always possible from within the belastingdienst
 organisation, this module is supposed to run on a private pc with an open
@@ -18,21 +18,37 @@ parameter).
 The scrape database contains the next tables (all paths are relative to the
 root_url of a scrape):
 
-    parameters, with columns:
+    table parameters, with columns:
         name (text): name of the parameter
         value (text): value of the parameter
 
-    pages, with columns:
+    table pages, with columns:
         page_id (integer): key to a specific page
-        path (str): path of a page
+        path (text): path of a page
         doc (zlib compressed utf-8 encoded text): complete response from the
             page-request for later extraction of data and other information
 
-    redirs, with columns:
-        redir_id: key to a specific redirect
-        req_path: requested path
-        redir_path: path to where the request was directed
+    table redirs, with columns:
+        redir_id (integer): key to a specific redirect
+        req_path (text): requested path
+        redir_path (text): path to where the request was directed
         type (text): nature of the redirect
+
+    When parameter add_info is True, the next table and view are also created:
+
+    table pages_info, with columns
+        page_id (integer): page_id, key into pages table
+        path (text): path of page
+        title (text): page title
+        num_h1s (integer): number of <h1> tags
+        first_h1 (text): text of the first <h1> tag
+        language (text): language
+        modified (date): last modification date
+        pagetype (text): page type
+        classes (text): classes of the page separated by spaces
+
+    view pages_full,
+        a join of all columns from the pages and pages_info table
 """
 
 # TODO: add silent mode
@@ -45,14 +61,15 @@ import re
 import logging
 from requests import RequestException
 
-from scraper_lib import ScrapeDB
-from scraper_lib import setup_file_logging, scrape_page, links, valid_path
+from scraper_lib import ScrapeDB, setup_file_logging
+from scraper_lib import scrape_page, links, valid_path, add_pages_info
 from bd_viauu import bintouu, split_uufile
 
 # ============================================================================ #
 root_url = 'https://www.belastingdienst.nl/wps/wcm/connect'
 start_path = '/nl/home'
-max_paths = 12000  # total some 9000 actual
+max_paths = 12000          # total some 9000 actual
+add_info = True            # creates new pages_info table
 publish = True
 publ_dir = '/var/www/bds/scrapes'
 # ============================================================================ #
@@ -138,6 +155,9 @@ elapsed = int(time.time() - start_time)
 logging.info(f'Site scrape finished in {elapsed//60}:{elapsed % 60:02} min')
 logging.info(f'    pages: {db.num_pages()}')
 logging.info(f'    redirs: {db.num_redirs()}')
+
+if add_info:
+    add_pages_info(db)
 
 db.close()
 

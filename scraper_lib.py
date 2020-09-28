@@ -37,6 +37,7 @@ import logging
 import requests
 import sqlite3
 import zlib
+import time
 from bs4 import BeautifulSoup
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
@@ -56,16 +57,10 @@ class ScrapeDB:
     """
 
     def __init__(self, db_file, create=False):
-        """Creates an instance of the ScrapeDB class.
-
-        Writes the database version in the parameters table while creating a
-        database. Reports an error if a database is opened with an incompatible
-        version.
-
-        Args:
-            db_file (str): name or path of the database to be opened or created
-            create (bool): database will be created on True, else just connected
-        """
+        # When db is on a networked drive maybe use next SQLite options to
+        # improve query speed:
+        #     PRAGMA synchronous = OFF
+        #     PRAGMA journal_mode = PERSIST
         self.db_file = db_file
         self.db_con = sqlite3.connect(self.db_file, isolation_level=None)
         self.exe = self.db_con.execute
@@ -233,64 +228,143 @@ class ScrapeDB:
                 pass
         return value
 
-    def new_attribs(self):
-        """Create new table and view to contain attributes of pages.
+    def new_pages_info_table(self):
+        """Create new table and view to contain information of pages.
 
         Existing table and view are deleted before the new ones are created.
-        The view that is created joins all pages with available attributes.
+        The view that is created joins all pages with the available info.
 
         Returns:
             None
         """
-        self.exe('DROP TABLE IF EXISTS attribs')
+        self.exe('DROP TABLE IF EXISTS pages_info')
         self.exe('''
-            CREATE TABLE attribs (
+            CREATE TABLE pages_info (
                 page_id	 INTEGER PRIMARY KEY NOT NULL UNIQUE,
                 title	 TEXT,
                 num_h1s	 INTEGER,
                 first_h1 TEXT,
                 language TEXT,
-                mod_date TEXT,
-                type	 TEXT,
+                modified DATE,
+                pagetype TEXT,
                 classes	 TEXT,
                 FOREIGN KEY (page_id)
                 REFERENCES pages (page_id)
                     ON UPDATE RESTRICT
                     ON DELETE RESTRICT)''')
-        self.exe('DROP VIEW IF EXISTS pages_attribs')
+        self.exe('DROP VIEW IF EXISTS pages_full')
         self.exe('''
-            CREATE VIEW pages_attribs AS
+            CREATE VIEW pages_full AS
                 SELECT *
                 FROM pages
-                LEFT JOIN attribs USING (page_id)''')
+                LEFT JOIN pages_info USING (page_id)''')
         logging.info(
-            'New attribs table and pages_attribs view created in scrape.db')
+            'New pages_info table and pages_full view created in scrape.db')
 
-    def add_attribs(self, path, title, num_h1s, first_h1,
-                       language, mod_date, type, classes):
-        """Add attributes for a page.
+    def add_page_info(self, info):
+        """Add info for a page.
+
+        A new row will be inserted in the pages_info table, with column values
+        as given bij the info dict argument: column 'name' = info['name'].
+        Next keys/columns are available:
+
+        - 'page_id': (int) key into the pages table
+        - 'title': (str) content of <title> tag
+        - 'num_h1s': (int) number <h1>'s
+        - 'first_h1': (str)text of the first h1
+        - 'language': (str) content of <meta name="language" content="xx" />
+        - 'modified': (date) content of
+                <meta name="DCTERMS.modified" content="date" />
+        - 'pagetype': (str) attribute value of <body data-pageType="...">
+        - 'classes': (str) classes from <body class="...">
 
         Args:
-            path (str): path of the page
-            title (str): title of the page
-            num_h1s (int): number of h1 tags in the page
-            first_h1 (str): text of the first h1 tag in the page
-            language (str): language of the page
-            mod_date (date): last modification date
-            type (str): page type
-            classes (str): page classes separated by spaces
+            info (dict[str, str|date|list[str]]): {'name': content or value}
 
         Returns:
             None
         """
         self.exe('''
-            INSERT INTO attribs
+            INSERT INTO pages_info
                 (page_id, title, num_h1s, first_h1,
-                language, mod_date, type, classes)
-            VALUES ((SELECT page_id FROM pages WHERE path = ?),
-                    ?, ?, ?, ?, ?, ?, ?)''',
-                [path, title, num_h1s, first_h1,
-                language, mod_date, type, classes])
+                language, modified, pagetype, classes)
+            VALUES
+                (:page_id, :title, :num_h1s, :first_h1, 
+                :language, :modified, :pagetype, :classes)''',
+                 info)
+
+    def get_page_info(self, path):
+        """Get all stored information of a page.
+
+        The returned dictionary has the next contents:
+
+            - 'page_id': (int) page_id
+            - 'path': (str) path
+            - 'title': (str) title
+            - 'num_h1s': (int) number of h1 tags
+            - 'first_h1': (str) text of the first h1 tag
+            - 'language': (str) language
+            - 'modified': (date) last modification date
+            - 'pagetype': (str) type
+            - 'classes': (str) classes separated by spaces
+            - 'doc': (str) html source
+
+        Args:
+            path (str): path of the page
+
+        Returns:
+            dictionary[str, str|date|None] | None: info name:value pair
+        """
+        qry = '''
+            SELECT
+                page_id, path, title, num_h1s, first_h1,
+                language, modified, pagetype, classes, doc
+            FROM pages_full
+            WHERE path = ?'''
+        row = self.exe(qry, [path]).fetchone()
+        if row:
+            fields = ('page_id', 'path', 'title', 'num_h1s', 'first_h1',
+                      'language', 'modified', 'pagetype', 'classes', 'doc')
+            info = dict(zip(fields, row))
+            mdate = info['modified']
+            info['modified'] = date.fromisoformat(mdate) if mdate else None
+            info['doc'] = zlib.decompress(info['doc']).decode()
+            return info
+        else:
+            return None
+
+    def pages_full(self):
+        """Page generator yielding all stored information per page.
+
+        The return dictionary has the next contents:
+
+            - 'page_id': (int) page_id
+            - 'path': (str) path
+            - 'title': (str) title
+            - 'num_h1s': (int) number of h1 tags
+            - 'first_h1': (str) text of the first h1 tag
+            - 'language': (str) language
+            - 'modified': (date) last modification date
+            - 'pagetype': (str) type
+            - 'classes': (str) classes separated by spaces
+            - 'doc': (str) html source
+
+        Yields:
+            dictionary[str, str|date|None]: info name:value pair
+        """
+        qry = '''
+            SELECT
+                page_id, path, title, num_h1s, first_h1,
+                language, modified, pagetype, classes, doc
+            FROM pages_full'''
+        for row in self.exe(qry):
+            fields = ('page_id', 'path', 'title', 'num_h1s', 'first_h1',
+                      'language', 'modified', 'pagetype', 'classes', 'doc')
+            info = dict(zip(fields, row))
+            mdate = info['modified']
+            info['modified'] = date.fromisoformat(mdate) if mdate else None
+            info['doc'] = zlib.decompress(info['doc']).decode()
+            yield info
 
 
 class DataSheet:
@@ -592,126 +666,121 @@ def links(soup, root_url,
     return page_links
 
 
-def title(soup, url):
-    """Retrieve the title of a page.
+def add_pages_info(scrape_db):
+    """Add table with information about any page to the database.
+
+    Additionally a view is added that joins the pages table with this
+    information table. Existing table and/or view are deleten before creating
+    new ones.
+
+    The following information is added for each page:
+
+    - title: content of <title> tag
+    - num_h1s: number <h1>'s
+    - first_h1: text of the first h1
+    - language: content of <meta name="language" content="xx" />
+    - modified: content of <meta name="DCTERMS.modified" content="date" />
+    - pagetype: attribute value of <body data-pageType="...">
+    - classes: attribute value of <body class="...">
+
+    It will be logged when tags or attributes are missing or values are invalid.
 
     Args:
-        soup (BeautifulSoup): bs4 representation of a page
-        url (str): url of the page; only used for logging
+        scrape_db (ScrapeDB):
 
     Returns:
-        str|None: page title or None if no title tag
+        None
     """
-    ttl = soup.head.title
-    if not ttl:
-        logging.warning(f'Page has no <title> tag: {url}')
-        return None
-    ttl = ttl.text
-    if not ttl:
-        logging.warning(f'Page with empty title: {url}')
-    return ttl
+    num_pages = scrape_db.num_pages()
+    start_time = time.time()
 
+    logging.info('Adding pages-info to database started')
+    scrape_db.new_pages_info_table()
 
-def language(soup, url):
-    """Retrieve the language of a page.
+    page_num = 0
+    for page_id, path, page_string in scrape_db.pages():
+        page_num += 1
+        soup = BeautifulSoup(page_string, features='lxml')
+        info = {'page_id': page_id}
 
-    Args:
-        soup (BeautifulSoup): bs4 representation of a page
-        url (str): url of the page; only used for logging
+        # get title
+        title = soup.head.title
+        if not title:
+            logging.warning(f'Page has no <title> tag: {path}')
+            title = None
+        else:
+            title = title.text
+            if not title:
+                logging.warning(f'Page with empty title: {path}')
+        info['title'] = title
 
-    Returns:
-        str|None: page language
-    """
-    lang = soup.head.find('meta', attrs={'name': 'language'})
-    if not lang:
-        logging.warning(f'Page has no <meta name="language"> tag: {url}')
-        return None
-    lang = lang['content']
-    if not lang:
-        logging.warning(f'Page with empy language: {url}')
-    return lang
+        # get language
+        language = soup.head.find('meta', attrs={'name': 'language'})
+        if not language:
+            logging.warning(f'Page has no <meta name="language"/> tag: {path}')
+            language = None
+        else:
+            language = language['content']
+            if not language:
+                logging.warning(f'Page with empy language: {path}')
+        info['language'] = language
 
+        # get date modified
+        modified = soup.head.find('meta', attrs={'name': 'DCTERMS.modified'})
+        if not modified:
+            logging.warning(
+                f'Page has no tag <meta name="DCTERMS.modified"/>: {path}')
+            modified = None
+        else:
+            try:
+                modified = date.fromisoformat(modified['content'])
+            except ValueError:
+                logging.warning(f'Page with improper modification date: {path}')
+                modified = None
+        info['modified'] = modified
 
-def mod_date(soup, url):
-    """Retrieve the modification date of a page.
+        # get type of page
+        if 'data-pagetype' not in soup.body.attrs:
+            logging.warning(
+                f'Page has no data-pagetype attribute in the <body> tag: {path}')
+            pagetype = None
+        else:
+            pagetype = soup.body['data-pagetype']
+            if not pagetype:
+                logging.warning(
+                    f'Page with empty page type in <body> tag: {path}')
+        info['pagetype'] = pagetype
 
-    Args:
-        soup (BeautifulSoup): bs4 representation of a page
-        url (str): url of the page; only used for logging
+        # get classes
+        if 'class' not in soup.body.attrs:
+            logging.warning(
+                f'Page has no class attribute in the <body> tag: {path}')
+            classes = None
+        else:
+            classes = soup.body['class']
+            if not classes:
+                logging.warning(f'Page with empty class in <body> tag: {path}')
+        info['classes'] = ' '.join(classes) if classes else None
 
-    Returns:
-        date|None: modification date
-    """
-    md = soup.head.find('meta', attrs={'name': 'DCTERMS.modified'})
-    if not md:
-        logging.warning(
-            f'Page has no tag <meta name="DCTERMS.modified">: {url}')
-        return None
-    md = date.fromisoformat(md['content'])
-    if not md:
-        logging.warning(f'Page with empty modification date: {url}')
-    return md
+        # get info from <h1> tags
+        h1s = []
+        for h1 in soup.find_all('h1'):
+            h1s.append(h1.text)
+        if len(h1s) == 0:
+            logging.warning(f'Page without h1: {path}')
+        info['num_h1s'] = len(h1s)
+        info['first_h1'] = h1s[0] if h1s else None
 
+        # add info to the database
+        scrape_db.add_page_info(info)
 
-def page_type(soup, url):
-    """Retrieve the type of a page.
+        page_time = (time.time() - start_time) / page_num
+        togo_time = int((num_pages - page_num) * page_time)
+        if page_num % 250 == 0:
+            print(f'adding info - togo: {num_pages - page_num} pages / '
+                  f'{togo_time // 60}:{togo_time % 60:02} min')
 
-    Args:
-        soup (BeautifulSoup): bs4 representation of a page
-        url (str): url of the page; only used for logging
-
-    Returns:
-        str|None: modification date
-    """
-    if 'data-pagetype' not in soup.body.attrs:
-        logging.warning(
-            f'Page has no data-pagetype attribute in the <body> tag: {url}')
-        return None
-    pt = soup.body['data-pagetype']
-    if not pt:
-        logging.warning(f'Page with empty page type: {url}')
-    return pt
-
-
-def classes(soup, url):
-    """Retrieve the classes of a page.
-
-    Args:
-        soup (BeautifulSoup): bs4 representation of a page
-        url (str): url of the page; only used for logging
-
-    Returns:
-         list[str]|None: list of classes
-    """
-    if 'class' not in soup.body.attrs:
-        logging.warning(
-            f'Page has no class attribute in the <body> tag: {url}')
-        return None
-    pc = soup.body['class']
-    if not pc:
-        logging.warning(f'Page with empty class: {url}')
-    return pc
-
-
-def h1s(soup, url):
-    """Retrieve the texts of the h1's in a page.
-
-    Args:
-        soup (BeautifulSoup): bs4 representation of a page
-        url (str): url of the page; only used for logging
-
-    Returns:
-        list[str]|None: list of h1-titles or None in case of no h1
-    """
-    soup_list = soup.find_all('h1')
-    num_h1s = len(soup_list)
-    if num_h1s == 0:
-        logging.warning(f'Page without h1: {url}')
-        return None
-    h1_list = []
-    for h1 in soup_list:
-        h1_list.append(h1.text)
-    return h1_list
+    logging.info('Adding pages-info to database completed')
 
 
 def text(soup):

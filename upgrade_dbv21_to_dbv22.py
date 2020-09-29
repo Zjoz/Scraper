@@ -93,7 +93,7 @@ logging.info('Table sizes v2.2 are:')
 logging.info(f'    pages: {dbn.num_pages()} rows')
 logging.info(f'    redirs: {dbn.num_redirs()} rows')
 
-logging.info('Upgrade database to version 2.2 concluded')
-
 dbo_con.close()
 dbn.close()
+
+logging.info('Upgrade database to version 2.2 concluded')

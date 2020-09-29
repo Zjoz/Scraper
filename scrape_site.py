@@ -154,7 +154,7 @@ while paths_todo and num_done < max_paths:
 elapsed = int(time.time() - start_time)
 logging.info(f'Site scrape finished in {elapsed//60}:{elapsed % 60:02} min')
 logging.info(f'    pages: {db.num_pages()}')
-logging.info(f'    redirs: {db.num_redirs()}')
+logging.info(f'    redirs: {db.num_redirs()}\n')
 
 if add_info:
     add_pages_info(db)

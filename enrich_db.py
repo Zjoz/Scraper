@@ -13,7 +13,12 @@ import logging
 from scraper_lib import ScrapeDB, setup_file_logging
 from scraper_lib import add_pages_info
 
-# TODO: add key_figures table to database
+# TODO: add key_figures table to database, with
+#     - number of pages, redirects, links
+#     _ number of DV-pages, Bib-pages
+#     - number of missing H1's, pages with more than one H1
+#     - number of pages with H1/H2 in wrong section (header/footer)
+#     - number of pages without title
 # TODO: register removed and added pages
 
 # ============================================================================ #

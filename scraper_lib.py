@@ -16,15 +16,8 @@ Functions in this module:
 - text: retrieve essential text content from a page
 """
 
-# TODO: record key figures
-#     - number of pages, redirects, links
-#     _ number of DV-pages, Bib-pages
-#     - number of missing H1's, pages with more than one H1
-#     - number of pages with H1/H2 in wrong section (header/footer)
-#     - number of pages without title
 # TODO: improve text method to filter non relevant info, such as:
 #     - linefeed in a single text element
-#     - select on basis of <div id="hoofd content" data-metrix-category="...">
 # TODO: retrieve usage data of pages via Matomo API to identify poor used pages
 # TODO: analyse changes in pages over time
 
@@ -692,6 +685,7 @@ def add_pages_info(scrape_db):
         None
     """
     num_pages = scrape_db.num_pages()
+    timestamp = scrape_db.get_par('timestamp')
     start_time = time.time()
 
     logging.info('Adding pages-info to database started')
@@ -777,10 +771,11 @@ def add_pages_info(scrape_db):
         page_time = (time.time() - start_time) / page_num
         togo_time = int((num_pages - page_num) * page_time)
         if page_num % 250 == 0:
-            print(f'adding info - togo: {num_pages - page_num} pages / '
+            print(f'adding info to scrape database of {timestamp} - togo: '
+                  f'{num_pages - page_num} pages / '
                   f'{togo_time // 60}:{togo_time % 60:02} min')
 
-    logging.info('Adding pages-info to database completed')
+    logging.info('Adding pages-info to database completed\n')
 
 
 def text(soup):

@@ -1,4 +1,4 @@
-"""Classes and functions for scraping www.belastingdienst.nl (version 2.4).
+"""Classes and functions for scraping www.belastingdienst.nl (version 2.5).
 
 Classes in this module:
 
@@ -11,22 +11,24 @@ Functions in this module:
 - scrape_page: scrape an html page and create an bs4 representation of it
 - valid_path: validate that path can be used for an html scrape
 - links: retrieve all links from the body of a page
-- title: retrieve the title of a page
-- h1s: retrieve the texts of the H1's in a page
+- add_extracted_info: add table with information extracted from each page
+- add_derived_info: add table with derived information for all pages
 - text: retrieve essential text content from a page
 """
 
+# TODO: use pathlib for all path manipulations
 # TODO: improve text method to filter non relevant info, such as:
 #     - linefeed in a single text element
-# TODO: retrieve usage data of pages via Matomo API to identify poor used pages
-# TODO: analyse changes in pages over time
 
 
 import re
 import copy
 import os
 import os.path
+from pathlib import Path
 import logging
+from typing import Dict, Union
+
 import requests
 import sqlite3
 import zlib
@@ -49,7 +51,19 @@ class ScrapeDB:
     All actions on the scrape database are handled via the class methods.
     """
 
+    version = '2.3'
+
     def __init__(self, db_file, create=False):
+        """Initiates the database object that encapsulates a scrape database.
+
+        Writes the database version in the parameters table while creating a
+        database. Reports an error if a database is opened with an incompatible
+        version.
+
+        Args:
+            db_file (str|Path): name or path of the database file
+            create (bool): create & connect database if True, else just connect
+        """
         # When db is on a networked drive maybe use next SQLite options to
         # improve query speed:
         #     PRAGMA synchronous = OFF
@@ -72,18 +86,19 @@ class ScrapeDB:
                 CREATE TABLE parameters (
                     name  TEXT PRIMARY KEY NOT NULL UNIQUE,
                     value TEXT NOT NULL)''')
-            self.exe('INSERT INTO parameters VALUES ("db_version", "2.2")')
-            logging.info('New scrape.db created')
+            self.exe(
+                f'INSERT INTO parameters VALUES ("db_version", {self.version})')
+            logging.info(f'New scrape.db v{self.version} created')
         else:
             qry = 'SELECT value FROM parameters WHERE name = "db_version"'
             db_version = self.exe(qry).fetchone()[0]
-            if db_version != '2.2':
+            if db_version != self.version:
                 logging.error(f'Incompatible database version: {db_version}')
                 raise sqlite3.DatabaseError(
                     f'Incompatible database version: {db_version}')
 
     def close(self):
-        """Closes the connection to the database.
+        """Close the connection to the database.
 
         Returns:
             None
@@ -91,7 +106,7 @@ class ScrapeDB:
         self.db_con.close()
 
     def add_page(self, path, doc):
-        """Add a scraped page to the database.
+        """Add a scraped page.
 
         Args:
             path (str): path relative to the root of the scrape
@@ -145,7 +160,7 @@ class ScrapeDB:
         return self.exe('SELECT count(*) FROM pages').fetchone()[0]
 
     def add_redir(self, req_path, redir_path, redir_type):
-        """Add a redirect to the database that occurred during a page scrape.
+        """Add a redirect that occurred during a page scrape.
 
         Args:
             req_path (str):
@@ -198,7 +213,7 @@ class ScrapeDB:
         self.exe(qry, [name, value])
 
     def get_par(self, name):
-        """Get a parameter value from the database.
+        """Get a parameter value.
 
         Args:
             name (str): name of the parameter
@@ -221,18 +236,21 @@ class ScrapeDB:
                 pass
         return value
 
-    def new_pages_info_table(self):
-        """Create new table and view to contain information of pages.
+    def new_extracted_info_table(self):
+        """Create new table and view to contain extracted information of pages.
 
+        The extracted_info table will contain uninterpreted information
+        available within the retained pages. As such this information is
+        strictly redundant, but stored seperately to enable quick retrieval.
+        The pages_extra view joins all pages with the extracted info.
         Existing table and view are deleted before the new ones are created.
-        The view that is created joins all pages with the available info.
 
         Returns:
             None
         """
-        self.exe('DROP TABLE IF EXISTS pages_info')
+        self.exe('DROP TABLE IF EXISTS extracted_info')
         self.exe('''
-            CREATE TABLE pages_info (
+            CREATE TABLE extracted_info (
                 page_id	 INTEGER PRIMARY KEY NOT NULL UNIQUE,
                 title	 TEXT,
                 num_h1s	 INTEGER,
@@ -245,21 +263,23 @@ class ScrapeDB:
                 REFERENCES pages (page_id)
                     ON UPDATE RESTRICT
                     ON DELETE RESTRICT)''')
-        self.exe('DROP VIEW IF EXISTS pages_full')
+        self.exe('DROP VIEW IF EXISTS pages_extra')
         self.exe('''
-            CREATE VIEW pages_full AS
+            CREATE VIEW pages_extra AS
                 SELECT *
                 FROM pages
-                LEFT JOIN pages_info USING (page_id)''')
+                LEFT JOIN extracted_info USING (page_id)''')
+        self.exe('VACUUM')
         logging.info(
-            'New pages_info table and pages_full view created in scrape.db')
+            'Extracted_info table and pages_full view (re)created in scrape.db')
 
-    def add_page_info(self, info):
-        """Add info for a page.
+    def add_extracted_info(self, info):
+        """Add extracted info for a page.
 
-        A new row will be inserted in the pages_info table, with column values
-        as given bij the info dict argument: column 'name' = info['name'].
-        Next keys/columns are available:
+        A new row will be inserted in the extracted_info table, with column
+        values as given by the info dict argument: column 'name' = info['name'].
+        The dict keys/table columns are listed below and should all be available
+        in the info dict argument:
 
         - 'page_id': (int) key into the pages table
         - 'title': (str) content of <title> tag
@@ -278,16 +298,73 @@ class ScrapeDB:
             None
         """
         self.exe('''
-            INSERT INTO pages_info
+            INSERT INTO extracted_info
                 (page_id, title, num_h1s, first_h1,
                 language, modified, pagetype, classes)
             VALUES
-                (:page_id, :title, :num_h1s, :first_h1, 
+                (:page_id, :title, :num_h1s, :first_h1,
                 :language, :modified, :pagetype, :classes)''',
                  info)
 
-    def get_page_info(self, path):
-        """Get all stored information of a page.
+    def new_derived_info_table(self):
+        """Create new table and view to contain derived information of pages.
+
+        The derived_info table will contain information that as such is not
+        available within the retained page, but can be derived from information
+        that is.
+        The pages_full view joins all pages with the extracted as well as the
+        derived information.
+        Existing table and view are deleted before the new ones are created.
+
+        Returns:
+            None
+        """
+        self.exe('DROP TABLE IF EXISTS derived_info')
+        self.exe('''
+            CREATE TABLE derived_info (
+                page_id	 INTEGER PRIMARY KEY NOT NULL UNIQUE,
+                business TEXT,
+                FOREIGN KEY (page_id)
+                REFERENCES pages (page_id)
+                    ON UPDATE RESTRICT
+                    ON DELETE RESTRICT)''')
+        self.exe('DROP VIEW IF EXISTS pages_full')
+        self.exe('''
+            CREATE VIEW pages_full AS
+                SELECT *
+                FROM pages
+                LEFT JOIN extracted_info USING (page_id)
+                LEFT JOIN derived_info USING (page_id)''')
+        self.exe('VACUUM')
+        logging.info(
+            'Derived_info table and pages_full view (re)created in scrape.db')
+
+    def add_derived_info(self, info):
+        """Add derived info for a page.
+
+        A new row will be inserted in the extracted_info table, with column
+        values as given by the info dict argument: column 'name' = info['name'].
+        The dict keys/table columns are listed below and should all be available
+        in the info dict argument:
+
+        - 'page_id': (int) key into the pages table
+        - 'business': (str) 'belastingen', 'toeslagen' or 'douane'
+
+        Args:
+            info (dict[str, str]): {'name': content or value}
+
+        Returns:
+            None
+        """
+        self.exe('''
+            INSERT INTO derived_info
+                (page_id, business)
+            VALUES
+                (:page_id, :business)''',
+                 info)
+
+    def get_page_extra_info(self, path):
+        """Get all basic and extracted information of a page.
 
         The returned dictionary has the next contents:
 
@@ -306,18 +383,21 @@ class ScrapeDB:
             path (str): path of the page
 
         Returns:
-            dictionary[str, str|date|None] | None: info name:value pair
+            dictionary[str, str|date|None]|None: info name:value pair
         """
+        # TODO: can the dict be generated from the fields of the table?
         qry = '''
             SELECT
                 page_id, path, title, num_h1s, first_h1,
                 language, modified, pagetype, classes, doc
-            FROM pages_full
+            FROM pages_extra
             WHERE path = ?'''
         row = self.exe(qry, [path]).fetchone()
         if row:
             fields = ('page_id', 'path', 'title', 'num_h1s', 'first_h1',
                       'language', 'modified', 'pagetype', 'classes', 'doc')
+            # next type hint to prohibit type warnings
+            info: Dict[str, Union[date, str, bytes, None]]
             info = dict(zip(fields, row))
             mdate = info['modified']
             info['modified'] = date.fromisoformat(mdate) if mdate else None
@@ -326,10 +406,10 @@ class ScrapeDB:
         else:
             return None
 
-    def pages_full(self):
-        """Page generator yielding all stored information per page.
+    def pages_extra(self):
+        """Page generator yielding all basic and extracted information per page.
 
-        The return dictionary has the next contents:
+        The yielded dictionary has the next contents:
 
             - 'page_id': (int) page_id
             - 'path': (str) path
@@ -349,10 +429,89 @@ class ScrapeDB:
             SELECT
                 page_id, path, title, num_h1s, first_h1,
                 language, modified, pagetype, classes, doc
-            FROM pages_full'''
+            FROM pages_extra'''
         for row in self.exe(qry):
             fields = ('page_id', 'path', 'title', 'num_h1s', 'first_h1',
                       'language', 'modified', 'pagetype', 'classes', 'doc')
+            info = dict(zip(fields, row))
+            mdate = info['modified']
+            info['modified'] = date.fromisoformat(mdate) if mdate else None
+            info['doc'] = zlib.decompress(info['doc']).decode()
+            yield info
+
+    def get_page_full_info(self, path):
+        """Get all available information of a page.
+
+        The returned dictionary has the next contents:
+
+            - 'page_id': (int) page_id
+            - 'path': (str) path
+            - 'title': (str) title
+            - 'num_h1s': (int) number of h1 tags
+            - 'first_h1': (str) text of the first h1 tag
+            - 'language': (str) language
+            - 'modified': (date) last modification date
+            - 'pagetype': (str) type
+            - 'classes': (str) classes separated by spaces
+            - 'business': (str) 'belastingen', 'toeslagen' or 'douane'
+            - 'doc': (str) html source
+
+        Args:
+            path (str): path of the page
+
+        Returns:
+            dictionary[str, str|date|None] | None: info name:value pair
+        """
+        qry = '''
+            SELECT
+                page_id, path, title, num_h1s, first_h1, language,
+                modified, pagetype, classes, business, doc
+            FROM pages_full
+            WHERE path = ?'''
+        row = self.exe(qry, [path]).fetchone()
+        if row:
+            fields = ('page_id', 'path', 'title', 'num_h1s', 'first_h1',
+                      'language', 'modified', 'pagetype', 'classes', 'business',
+                      'doc')
+            # next type hint to prohibit type warnings
+            info: Dict[str, Union[date, str, bytes, None]]
+            info = dict(zip(fields, row))
+            mdate = info['modified']
+            info['modified'] = date.fromisoformat(mdate) if mdate else None
+            info['doc'] = zlib.decompress(info['doc']).decode()
+            return info
+        else:
+            return None
+
+    def pages_full(self):
+        """Page generator yielding all available information per page.
+
+        The yielded dictionary has the next contents:
+
+            - 'page_id': (int) page_id
+            - 'path': (str) path
+            - 'title': (str) title
+            - 'num_h1s': (int) number of h1 tags
+            - 'first_h1': (str) text of the first h1 tag
+            - 'language': (str) language
+            - 'modified': (date) last modification date
+            - 'pagetype': (str) type
+            - 'classes': (str) classes separated by spaces
+            - 'business': (str) 'belastingen', 'toeslagen' or 'douane'
+            - 'doc': (str) html source
+
+        Yields:
+            dictionary[str, str|date|None]: info name:value pair
+        """
+        qry = '''
+            SELECT
+                page_id, path, title, num_h1s, first_h1, language,
+                modified, pagetype, classes, business, doc
+            FROM pages_full'''
+        for row in self.exe(qry):
+            fields = ('page_id', 'path', 'title', 'num_h1s', 'first_h1',
+                      'language', 'modified', 'pagetype', 'classes', 'business',
+                      'doc')
             info = dict(zip(fields, row))
             mdate = info['modified']
             info['modified'] = date.fromisoformat(mdate) if mdate else None
@@ -515,8 +674,7 @@ def scrape_page(root_url, req_url):
                 if i_req_url.startswith(root_url):
                     # requested page is within scope of scrape
                     i_resp_url = i_resp.headers['Location']
-                    redir_type = f'redir {i_resp.status_code}'
-                    redirs.append((i_req_url, i_resp_url, redir_type))
+                    redirs.append((i_req_url, i_resp_url, i_resp.status_code))
                     if i_resp.status_code not in (301, 302):
                         # just to know if this occurs; probably not
                         logging.warning(
@@ -536,7 +694,7 @@ def scrape_page(root_url, req_url):
             elif re.match(re_network_path, resp_url):
                 protocol = re_protocol.match(root_url)[0]
                 resp_url = protocol + resp_url
-            redirs.append((req_url, resp_url, 'client-side refresh'))
+            redirs.append((req_url, resp_url, 'client'))
             req_url = resp_url
             continue
 
@@ -552,7 +710,7 @@ def scrape_page(root_url, req_url):
                     domain = re_domain.match(root_url)[0]
                     def_url = domain + def_url
                     if def_url != resp_url:
-                        redirs.append((resp_url, def_url, 'alias url'))
+                        redirs.append((resp_url, def_url, 'alias'))
                 else:
                     logging.warning('Non-standard definitive url; '
                                     f'falling back to: {resp_url}')
@@ -659,12 +817,12 @@ def links(soup, root_url,
     return page_links
 
 
-def add_pages_info(scrape_db):
-    """Add table with information about any page to the database.
+def add_extracted_info(scrape_db):
+    """Add table with information extracted from each page.
 
-    Additionally a view is added that joins the pages table with this
-    information table. Existing table and/or view are deleten before creating
-    new ones.
+    Besides this extracted_info table a pages_extra view is added that joins the
+    pages table with the extracted_info table.
+    Existing table and/or view are deleted before creating new ones.
 
     The following information is added for each page:
 
@@ -688,8 +846,8 @@ def add_pages_info(scrape_db):
     timestamp = scrape_db.get_par('timestamp')
     start_time = time.time()
 
-    logging.info('Adding pages-info to database started')
-    scrape_db.new_pages_info_table()
+    logging.info('Adding extracted-info to database started')
+    scrape_db.new_extracted_info_table()
 
     page_num = 0
     for page_id, path, page_string in scrape_db.pages():
@@ -735,8 +893,8 @@ def add_pages_info(scrape_db):
 
         # get type of page
         if 'data-pagetype' not in soup.body.attrs:
-            logging.warning(
-                f'Page has no data-pagetype attribute in the <body> tag: {path}')
+            logging.warning('Page has no data-pagetype attribute in the '
+                            f'<body> tag: {path}')
             pagetype = None
         else:
             pagetype = soup.body['data-pagetype']
@@ -766,16 +924,75 @@ def add_pages_info(scrape_db):
         info['first_h1'] = h1s[0] if h1s else None
 
         # add info to the database
-        scrape_db.add_page_info(info)
+        scrape_db.add_extracted_info(info)
 
         page_time = (time.time() - start_time) / page_num
         togo_time = int((num_pages - page_num) * page_time)
         if page_num % 250 == 0:
-            print(f'adding info to scrape database of {timestamp} - togo: '
-                  f'{num_pages - page_num} pages / '
+            print(f'adding extracted info to scrape database of {timestamp} - '
+                  f'togo: {num_pages - page_num} pages / '
                   f'{togo_time // 60}:{togo_time % 60:02} min')
 
-    logging.info('Adding pages-info to database completed\n')
+    logging.info('Adding extracted-info to database completed\n')
+
+
+def add_derived_info(scrape_db):
+    """Add table with derived information for all pages.
+
+    Besides this derived_info table a pages_full view is added that joins the
+    pages table with the extracted_info as well as the derived_info table.
+    Existing table and/or view are deleted before creating new ones.
+
+    The following information is added for each page:
+
+    - business: 'belastingen', 'toeslagen' or 'douane'; determined from classes
+
+    It will be logged when info can not be derived due to inconsistent or
+    unavailable infomation.
+
+    Args:
+        scrape_db (ScrapeDB):
+
+    Returns:
+        None
+    """
+    num_pages = scrape_db.num_pages()
+    timestamp = scrape_db.get_par('timestamp')
+    start_time = time.time()
+
+    logging.info('Adding derived-info to database started')
+    scrape_db.new_derived_info_table()
+
+    page_num = 0
+    for page_id, path, page_string in scrape_db.pages():
+        page_num += 1
+        derived_info = {'page_id': page_id}
+
+        # determine business
+        extra_info = scrape_db.get_page_extra_info(path)
+        classes = extra_info['classes']
+        if classes:
+            if 'toeslagen' in classes:
+                business = 'toeslagen'
+            elif 'douane' in classes:
+                business = 'douane'
+            else:
+                business = 'belastingen'
+        else:
+            business = None
+        derived_info['business'] = business
+
+        # add info to the database
+        scrape_db.add_derived_info(derived_info)
+
+        page_time = (time.time() - start_time) / page_num
+        togo_time = int((num_pages - page_num) * page_time)
+        if page_num % 500 == 0:
+            print(f'adding derived info to scrape database of {timestamp} - '
+                  f'togo: {num_pages - page_num} pages / '
+                  f'{togo_time // 60}:{togo_time % 60:02} min')
+
+    logging.info('Adding derived-info to database completed\n')
 
 
 def text(soup):

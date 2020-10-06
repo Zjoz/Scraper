@@ -1,8 +1,8 @@
 from bd_viauu import bintouu, split_uufile
 
 # ============================================================================ #
-in_file = 'pp382.7z'
-part_max_mb = 26
+in_file = '/home/jos/bdscraper/scrapes/201001-0530 - bd-scrape/scrape.db'
+part_max_mb = 30
 # ============================================================================ #
 
 uufile = in_file + '.uu'

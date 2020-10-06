@@ -1,4 +1,4 @@
-"""Module for test and exploring (version 0.2)"""
+"""Module for test and exploring (version 0.3)"""
 
 
 import os
@@ -52,7 +52,7 @@ sheet = DataSheet(
 page_num = 0
 
 for case, path in test_paths:
-    info = db.get_page_info(path)
+    info = db.get_page_full_info(path)
 
 # for info in db.pages_full():
 #     path = info['path']

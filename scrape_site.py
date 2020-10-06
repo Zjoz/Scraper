@@ -1,4 +1,4 @@
-"""Scrape www.belastingdienst.nl and store the results (version 2.5).
+"""Scrape www.belastingdienst.nl and store the results (version 2.6).
 
 Since scraping is not always possible from within the belastingdienst
 organisation, this module is supposed to run on a private pc with an open
@@ -62,26 +62,30 @@ import logging
 from requests import RequestException
 
 from scraper_lib import ScrapeDB, setup_file_logging
-from scraper_lib import scrape_page, links, valid_path, add_pages_info
+from scraper_lib import scrape_page, links, valid_path
+from scraper_lib import add_extracted_info, add_derived_info
 from bd_viauu import bintouu, split_uufile
 
 # ============================================================================ #
 root_url = 'https://www.belastingdienst.nl/wps/wcm/connect'
 start_path = '/nl/home'
-max_paths = 12000          # total some 9000 actual
-add_info = True            # creates new pages_info table
+max_paths = 15000           # total some 10000 actual (paths, not pages)
+extract_info = True         # add extracted_info table
+derive_info = True          # add derived_info table (only when also extract)
 publish = True
 publ_dir = '/var/www/bds/scrapes'
 # ============================================================================ #
 
 # setup output and database
-dir_name = time.strftime('%y%m%d-%H%M') + ' - bd-scrape'
+timestamp = time.strftime('%y%m%d-%H%M')
+dir_name = timestamp + ' - bd-scrape'
 os.mkdir(dir_name)
 publ_path = os.path.join(publ_dir, dir_name)
 db_file = os.path.join(dir_name, 'scrape.db')
 db = ScrapeDB(db_file, create=True)
 db.upd_par('root_url', root_url)
 db.upd_par('start_path', start_path)
+db.upd_par('timestamp', timestamp)
 
 # setup logging; all log messages go to file, console receives warnings and
 # higher severity messages
@@ -156,8 +160,10 @@ logging.info(f'Site scrape finished in {elapsed//60}:{elapsed % 60:02} min')
 logging.info(f'    pages: {db.num_pages()}')
 logging.info(f'    redirs: {db.num_redirs()}\n')
 
-if add_info:
-    add_pages_info(db)
+if extract_info:
+    add_extracted_info(db)
+    if derive_info:
+        add_derived_info(db)
 
 db.close()
 

@@ -3,11 +3,12 @@ import logging
 import zlib
 from pathlib import Path
 
-from scraper_lib import ScrapeDB, setup_file_logging
+from scraper_lib import ScrapeDB, setup_file_logging, populate_links_table
 
 # ============================================================================ #
 min_timestamp = '200928-0000'   # scrapes before are not processed
 max_timestamp = '201006-2359'   # scrapes after are not processed
+links_table = True              # populate links table
 within_bd = False               # True when running on the DWB
 # ============================================================================ #
 
@@ -110,6 +111,28 @@ for scrape_dir in dirs:
             print(f'[{timestamp}] - {redir_num} redirs copied')
     logging.info(
         'Table redirs copied to db v2.3, while normalising redir types')
+
+    # add links table and view
+    dbn.exe('''
+        CREATE TABLE links (
+            page_id	 INTEGER NOT NULL,
+            link_id  INTEGER,
+            ext_url  TEXT,
+            FOREIGN KEY (page_id, link_id)
+            REFERENCES pages (page_id, page_id)
+                ON UPDATE RESTRICT
+                ON DELETE RESTRICT)''')
+    dbn.exe('''
+        CREATE VIEW "links_expl" AS
+            SELECT
+                l.page_id, p1.path AS page_path,
+                l.link_id, p2.path AS link_path, 
+                ext_url
+            FROM links AS l
+                JOIN pages AS p1 USING (page_id) 
+                LEFT JOIN pages AS p2 ON link_id = p2.page_id''')
+    if links_table:
+        populate_links_table(dbn)
 
     dbn.exe('VACUUM')
     dbo_con.close()

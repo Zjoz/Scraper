@@ -14,13 +14,15 @@ from pathlib import Path
 from bs4 import BeautifulSoup
 
 from scraper_lib import ScrapeDB, DataSheet, setup_file_logging
-from scraper_lib import add_extracted_info, add_derived_info, text, links
+from scraper_lib import extract_info, derive_info, text, links
+
+# TODO: derive links sheet from links table
 
 # ============================================================================ #
-min_timestamp = '201002-0000'   # scrapes before are not processed
-max_timestamp = '201002-2359'   # scrapes after are not processed
-extract_info = False            # creates new extracted_info table
-derive_info = False             # creates new derived_info table
+min_timestamp = '200831-0000'   # scrapes before are not processed
+max_timestamp = '200831-2359'   # scrapes after are not processed
+recre_extract_info = False      # recreates extracted_info table
+recre_derive_info = False       # recreates derived_info table
 within_bd = False               # True when running on the DWB
 # ============================================================================ #
 
@@ -51,10 +53,10 @@ for scrape_dir in dirs:
     num_pages = db.num_pages()
 
     # (re)creates the info tables and views in the database
-    if extract_info:
-        add_extracted_info(db)
-    if derive_info:
-        add_derived_info(db)
+    if recre_extract_info:
+        extract_info(db)
+    if recre_derive_info:
+        derive_info(db)
 
     # prepare to save data to worksheets
     pages_ds = DataSheet('Pages', ('Path', 55), ('Title', 35), ('First h1', 35),

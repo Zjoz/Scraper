@@ -62,16 +62,17 @@ import logging
 from requests import RequestException
 
 from scraper_lib import ScrapeDB, setup_file_logging
-from scraper_lib import scrape_page, links, valid_path
-from scraper_lib import add_extracted_info, add_derived_info
+from scraper_lib import scrape_page, links, valid_path, populate_links_table
+from scraper_lib import extract_info, derive_info
 from bd_viauu import bintouu, split_uufile
 
 # ============================================================================ #
 root_url = 'https://www.belastingdienst.nl/wps/wcm/connect'
 start_path = '/nl/home'
 max_paths = 15000           # total some 10000 actual (paths, not pages)
-extract_info = True         # add extracted_info table
-derive_info = True          # add derived_info table (only when also extract)
+do_links_table = True       # populate links table
+do_extract_info = True      # add extracted_info table
+do_derive_info = True       # add derived_info table (only when also extract)
 publish = True
 publ_dir = '/var/www/bds/scrapes'
 # ============================================================================ #
@@ -139,7 +140,8 @@ while paths_todo and num_done < max_paths:
         paths_done.add(req_path)
     num_done += 1
 
-    # add relevant links to paths_todo list
+    # add relevant links to paths_todo list (include links from header and
+    # footer to trace all pages)
     for l_text, l_path in links(soup, root_url, root_rel=True,
                                 excl_hdr_ftr=False, remove_anchor=True):
         if l_path.startswith('/'):
@@ -160,10 +162,13 @@ logging.info(f'Site scrape finished in {elapsed//60}:{elapsed % 60:02} min')
 logging.info(f'    pages: {db.num_pages()}')
 logging.info(f'    redirs: {db.num_redirs()}\n')
 
-if extract_info:
-    add_extracted_info(db)
-    if derive_info:
-        add_derived_info(db)
+if do_links_table:
+    populate_links_table(db)
+
+if do_extract_info:
+    extract_info(db)
+    if do_derive_info:
+        derive_info(db)
 
 db.close()
 

@@ -83,6 +83,24 @@ class ScrapeDB:
                     redir_path TEXT NOT NULL,
                     type       TEXT)''')
             self.exe('''
+                CREATE TABLE links (
+                    page_id	 INTEGER NOT NULL,
+                    link_id  INTEGER,
+                    ext_url  TEXT,
+                    FOREIGN KEY (page_id, link_id)
+                    REFERENCES pages (page_id, page_id)
+                        ON UPDATE RESTRICT
+                        ON DELETE RESTRICT)''')
+            self.exe('''
+                CREATE VIEW "links_expl" AS
+                    SELECT
+                        l.page_id, p1.path AS page_path,
+                        l.link_id, p2.path AS link_path, 
+                        ext_url
+                    FROM links AS l
+                        JOIN pages AS p1 USING (page_id) 
+                        LEFT JOIN pages AS p2 ON link_id = p2.page_id''')
+            self.exe('''
                 CREATE TABLE parameters (
                     name  TEXT PRIMARY KEY NOT NULL UNIQUE,
                     value TEXT NOT NULL)''')
@@ -122,18 +140,18 @@ class ScrapeDB:
             return None
 
     def get_page(self, path):
-        """Get the complete doc string of a page.
+        """Get the id and complete doc string of a page.
 
         Args:
             path (str): path of the page; relative to root of scrape
 
         Returns:
-            str|None: doc string of the page or None if not available
+            (int, str)|None: tuple (page_id, doc_string) or None if no match
         """
-        qry = 'SELECT doc FROM pages WHERE path = ?'
-        doc = self.exe(qry, [path]).fetchone()
-        if doc:
-            return zlib.decompress(doc[0]).decode()
+        qry = 'SELECT page_id, doc FROM pages WHERE path = ?'
+        page = self.exe(qry, [path]).fetchone()
+        if page:
+            return page[0], zlib.decompress(page[1]).decode()
         else:
             return None
 
@@ -198,6 +216,37 @@ class ScrapeDB:
             int: number of redirects
         """
         return self.exe('SELECT count(*) FROM redirs').fetchone()[0]
+
+    def get_url_after_redirs(self, req_url):
+        """Redirect a url to its final destination.
+
+        In case no redirection are available in the redirs table, the
+        returned url is the same as te requested url. Url's can also be paths
+        relative to the root of the scrape. Since the redirs table contains
+        internal redirects only, this is primary use case.
+
+        Args:
+            req_url (str): requested full url or path relative to root_url
+
+        Returns:
+            str: final redirected url or path relative to root_url
+        """
+        qry = 'SELECT redir_path, type FROM redirs WHERE req_path = ?'
+        path = req_url
+        while True:
+            redir = self.exe(qry, [path]).fetchone()
+            if redir:
+                path, redir_type = redir
+                # the next test prohibits endless redir loops (they do occur!)
+                # since the destination of an alias is the definitive path of
+                # a page, this path is returned on hitting an alias redir
+                if redir_type == 'alias':
+                    return path
+                else:
+                    # no alias redir, so maybe still another redir to go
+                    continue
+            else:
+                return path
 
     def upd_par(self, name, value):
         """Insert or update a parameter.
@@ -324,6 +373,7 @@ class ScrapeDB:
             CREATE TABLE derived_info (
                 page_id	 INTEGER PRIMARY KEY NOT NULL UNIQUE,
                 business TEXT,
+                category TEXT,
                 FOREIGN KEY (page_id)
                 REFERENCES pages (page_id)
                     ON UPDATE RESTRICT
@@ -349,6 +399,7 @@ class ScrapeDB:
 
         - 'page_id': (int) key into the pages table
         - 'business': (str) 'belastingen', 'toeslagen' or 'douane'
+        - 'category': (str) 'dv', 'bib' or 'alg'
 
         Args:
             info (dict[str, str]): {'name': content or value}
@@ -358,10 +409,40 @@ class ScrapeDB:
         """
         self.exe('''
             INSERT INTO derived_info
-                (page_id, business)
+                (page_id, business, category)
             VALUES
-                (:page_id, :business)''',
+                (:page_id, :business, :category)''',
                  info)
+
+    def purge_links_table(self):
+        """Purge the links table.
+
+        Returns:
+            None
+        """
+        self.exe('DELETE FROM links')
+        self.exe('VACUUM')
+        logging.info('Links table purged')
+
+    def add_link(self, page_id, link_id, ext_url):
+        """Add a linkt to the links table.
+
+        In case a link is internal relative to root_url, it should be stored as
+        link_id, with ext_url set to None. If the link is external it should be
+        stored as (full) ext_url, with link_id set to None.
+
+        Args:
+            page_id (int): key into the pages table
+            link_id (int|None): key into the pages table or None
+            ext_url (str|None): complete external url or None
+
+        Returns:
+            None
+        """
+        self.exe('''
+            INSERT INTO links (page_id, link_id, ext_url)
+            VALUES (?, ?, ?)''',
+                 [page_id, link_id, ext_url])
 
     def get_page_extra_info(self, path):
         """Get all basic and extracted information of a page.
@@ -454,6 +535,7 @@ class ScrapeDB:
             - 'pagetype': (str) type
             - 'classes': (str) classes separated by spaces
             - 'business': (str) 'belastingen', 'toeslagen' or 'douane'
+            - 'category': (str) 'dv', 'bib' or 'alg'
             - 'doc': (str) html source
 
         Args:
@@ -465,14 +547,14 @@ class ScrapeDB:
         qry = '''
             SELECT
                 page_id, path, title, num_h1s, first_h1, language,
-                modified, pagetype, classes, business, doc
+                modified, pagetype, classes, business, category, doc
             FROM pages_full
             WHERE path = ?'''
         row = self.exe(qry, [path]).fetchone()
         if row:
             fields = ('page_id', 'path', 'title', 'num_h1s', 'first_h1',
                       'language', 'modified', 'pagetype', 'classes', 'business',
-                      'doc')
+                      'category', 'doc')
             # next type hint to prohibit type warnings
             info: Dict[str, Union[date, str, bytes, None]]
             info = dict(zip(fields, row))
@@ -498,6 +580,7 @@ class ScrapeDB:
             - 'pagetype': (str) type
             - 'classes': (str) classes separated by spaces
             - 'business': (str) 'belastingen', 'toeslagen' or 'douane'
+            - 'category': (str) 'dv', 'bib' or 'alg'
             - 'doc': (str) html source
 
         Yields:
@@ -506,12 +589,12 @@ class ScrapeDB:
         qry = '''
             SELECT
                 page_id, path, title, num_h1s, first_h1, language,
-                modified, pagetype, classes, business, doc
+                modified, pagetype, classes, business, category, doc
             FROM pages_full'''
         for row in self.exe(qry):
             fields = ('page_id', 'path', 'title', 'num_h1s', 'first_h1',
                       'language', 'modified', 'pagetype', 'classes', 'business',
-                      'doc')
+                      'category', 'doc')
             info = dict(zip(fields, row))
             mdate = info['modified']
             info['modified'] = date.fromisoformat(mdate) if mdate else None
@@ -754,7 +837,7 @@ def links(soup, root_url,
 
     - no links from <div id="bld-nojs">
     - no links from <header> or <footer> if excl_hdr_ftr == True
-    - no links containing 'readspeaker'
+    - no links containing 'readspeaker' or 'adobe'
     - only links that start with /, // or protocol: (uri-scheme)
 
     Further processing of the links is determined by the arguments:
@@ -790,7 +873,7 @@ def links(soup, root_url,
     page_links = []
     for a_tag in sc.body.find_all('a', href=True):
         link = a_tag['href']
-        if 'readspeaker' in link:
+        if 'readspeaker' in link or 'adobe' in link:
             continue
         if remove_anchor:
             link = link.partition('#')[0]
@@ -817,11 +900,73 @@ def links(soup, root_url,
     return page_links
 
 
-def add_extracted_info(scrape_db):
-    """Add table with information extracted from each page.
+def populate_links_table(scrape_db):
+    """Fill the links table with all relevant links from the scraped pages.
 
-    Besides this extracted_info table a pages_extra view is added that joins the
-    pages table with the extracted_info table.
+    For two reasons this function can only be used after a scrape is
+    completed. First a completed pages table is needed to get page_id's for
+    pages as well as links. Second a completed redirs table is needed to get
+    the definitive paths of internal links.
+
+    When the destination of a link can not be found in the pages table,
+    it is considered an external link. When an internal link by exception is
+    not hit during the scrape, this internal link will then be (ncorrectly)
+    saved as external. This case is considered very rare,
+
+    Args:
+        scrape_db (ScrapeDB): the database of the scrape
+
+    Returns:
+        None
+    """
+    num_pages = scrape_db.num_pages()
+    root_url = scrape_db.get_par('root_url')
+    timestamp = scrape_db.get_par('timestamp')
+    start_time = time.time()
+
+    logging.info('Populating links table started')
+
+    # cycle over all pages
+    page_num = 0
+    for page_id, page_path, page_string in scrape_db.pages():
+        page_num += 1
+        soup = BeautifulSoup(page_string, features='lxml')
+        page_links = links(soup, root_url, root_rel=True, excl_hdr_ftr=True)
+
+        # cycle over all links of this page
+        for link_text, link_url in page_links:
+            def_url = scrape_db.get_url_after_redirs(link_url)
+            page = scrape_db.get_page(def_url)
+            if page:
+                # the link is in the pages table, so there is a page_id
+                link_id = page[0]
+                scrape_db.add_link(page_id, link_id, None)
+            else:
+                # the link is saved as external (it might still be internal)
+                scrape_db.add_link(page_id, None, link_url)
+
+        # print progress and prognosis
+        if page_num % 100 == 0:
+            page_time = (time.time() - start_time) / page_num
+            togo_time = int((num_pages - page_num) * page_time)
+            print(f'fetching links from pages of {timestamp} - togo: '
+                  f'{num_pages - page_num} pages / '
+                  f'{togo_time // 60}:{togo_time % 60:02} min')
+
+    logging.info('Populating links table completed\n')
+
+
+def extract_info(scrape_db):
+    """Add and populate table with information extracted from each page.
+
+    Besides this extracted_info table, a pages_extra view is added joining
+    the pages table with the extracted_info table.
+
+    A distinction is made between extracted and derived information:
+    extracted info is readily available within a scraped page, while derived
+    info concerns calculated or interpreted information. The latter is stored
+    in a seperate table and is serviced via the derive_info funcion.
+
     Existing table and/or view are deleted before creating new ones.
 
     The following information is added for each page:
@@ -837,7 +982,7 @@ def add_extracted_info(scrape_db):
     It will be logged when tags or attributes are missing or values are invalid.
 
     Args:
-        scrape_db (ScrapeDB):
+        scrape_db (ScrapeDB): the database of the scrape
 
     Returns:
         None
@@ -849,6 +994,7 @@ def add_extracted_info(scrape_db):
     logging.info('Adding extracted-info to database started')
     scrape_db.new_extracted_info_table()
 
+    # cycle over all pages
     page_num = 0
     for page_id, path, page_string in scrape_db.pages():
         page_num += 1
@@ -926,9 +1072,10 @@ def add_extracted_info(scrape_db):
         # add info to the database
         scrape_db.add_extracted_info(info)
 
-        page_time = (time.time() - start_time) / page_num
-        togo_time = int((num_pages - page_num) * page_time)
+        # print progress and prognosis
         if page_num % 250 == 0:
+            page_time = (time.time() - start_time) / page_num
+            togo_time = int((num_pages - page_num) * page_time)
             print(f'adding extracted info to scrape database of {timestamp} - '
                   f'togo: {num_pages - page_num} pages / '
                   f'{togo_time // 60}:{togo_time % 60:02} min')
@@ -936,22 +1083,38 @@ def add_extracted_info(scrape_db):
     logging.info('Adding extracted-info to database completed\n')
 
 
-def add_derived_info(scrape_db):
-    """Add table with derived information for all pages.
+def derive_info(scrape_db):
+    """Add and populate a table with derived information for all pages.
 
-    Besides this derived_info table a pages_full view is added that joins the
+    Besides this derived_info table, a pages_full view is added joining the
     pages table with the extracted_info as well as the derived_info table.
+
+    Derived information concerns calculated or interpreted information,
+    that as such is not available within a scraped page. This in contrast to
+    extracted information which is stored in a seperate table and serviced via
+    the extract_info function.
+
     Existing table and/or view are deleted before creating new ones.
 
     The following information is added for each page:
 
-    - business: 'belastingen', 'toeslagen' or 'douane'; determined from classes
+    - business: 'belastingen', 'toeslagen' or 'douane'; based on classes
+    - category: 'dv', 'bib' or 'alg'; mainly based on pagetypes
+
+        - 'dv' if pagetype is 'bld-filter' or 'bld-dv-content'
+        - 'bib' if pagetype is 'bld-bd', 'bld-cluster', 'bld-direction',
+                'bld-landing', 'bld-overview', 'bld-sitemap', 'bld-target' or
+                'bld-targetGroup'
+        - 'alg' if pagetype is 'bld-outage' or 'bld-newsItem'
+        - wrapper pages (pagetype is 'bld-wrapper') are special: when all pages
+            linking to one are of the same category, they are categorised as
+            such, otherwise they are categorised as 'alg'
 
     It will be logged when info can not be derived due to inconsistent or
     unavailable infomation.
 
     Args:
-        scrape_db (ScrapeDB):
+        scrape_db (ScrapeDB): the database of the scrape
 
     Returns:
         None
@@ -963,14 +1126,25 @@ def add_derived_info(scrape_db):
     logging.info('Adding derived-info to database started')
     scrape_db.new_derived_info_table()
 
+    dv_types = {'bld-filter', 'bld-dv-content'}
+    bib_types = {'bld-bd', 'bld-cluster', 'bld-direction', 'bld-landing',
+                 'bld-overview', 'bld-sitemap', 'bld-target', 'bld-targetGroup'}
+    alg_types = {'bld-outage', 'bld-newsItem'}
+
+    # cycle over all pages, with wrapper pages after all others
+    for_qry = '''
+        SELECT page_id, pagetype, classes
+        FROM extracted_info
+        ORDER BY
+            CASE pagetype
+                WHEN 'bld-wrapper' THEN 2 ELSE 1
+            END'''
     page_num = 0
-    for page_id, path, page_string in scrape_db.pages():
+    for page_id, pagetype, classes in scrape_db.exe(for_qry).fetchall():
         page_num += 1
         derived_info = {'page_id': page_id}
 
         # determine business
-        extra_info = scrape_db.get_page_extra_info(path)
-        classes = extra_info['classes']
         if classes:
             if 'toeslagen' in classes:
                 business = 'toeslagen'
@@ -982,12 +1156,35 @@ def add_derived_info(scrape_db):
             business = None
         derived_info['business'] = business
 
+        # determine category: dv, bib or alg
+        category = None
+        if pagetype in dv_types:
+            category = 'dv'
+        elif pagetype in bib_types:
+            category = 'bib'
+        elif pagetype in alg_types:
+            category = 'alg'
+        elif pagetype == 'bld-wrapper':
+            cat_qry = '''
+                SELECT category
+                FROM links
+                    JOIN derived_info USING (page_id)
+                WHERE link_id = ?
+                GROUP BY category'''
+            categoriess = scrape_db.exe(cat_qry, [page_id]).fetchall()
+            if len(categoriess) == 1:
+                category = categoriess[0][0]
+            else:
+                category = 'alg'
+        derived_info['category'] = category
+
         # add info to the database
         scrape_db.add_derived_info(derived_info)
 
-        page_time = (time.time() - start_time) / page_num
-        togo_time = int((num_pages - page_num) * page_time)
+        # print progress and prognosis
         if page_num % 500 == 0:
+            page_time = (time.time() - start_time) / page_num
+            togo_time = int((num_pages - page_num) * page_time)
             print(f'adding derived info to scrape database of {timestamp} - '
                   f'togo: {num_pages - page_num} pages / '
                   f'{togo_time // 60}:{togo_time % 60:02} min')

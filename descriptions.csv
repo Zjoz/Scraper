@@ -1,0 +1,31 @@
+pages,pagina’s
+pages_lang_nl,nederlandstalige pagina’s
+pages_lang_en,engelstalige pagina’s
+pages_lang_de,duitstalige pagina’s
+pages_lang_None,pagina’s met onbekende taal
+pages_buss_belastingen,pagina’s voor belastingen
+pages_buss_douane,pagina’s voor douane
+pages_buss_toeslagen,pagina’s voor toeslagen
+pages_buss_None,pagina’s voor onbekend organisatieonderdeel
+pages_cat_dv,dienstverleningspagina's
+pages_cat_bib,bibliotheek pagina's
+pages_cat_alg,algemene pagina's
+redirs,url’s die worden doorverwezen
+redirs_301,url’s die permanent worden doorverwezen
+redirs_302,url’s die tijdelijk worden doorverwezen
+redirs_server,url’s die vanuit de server worden doorverwezen
+redirs_client,url’s die via een client-side refresh worden doorverwezen
+redirs_301_slash,url’s die permanent worden doorverwezen naar een url met slechts een slash verschil
+redirs_302_slash,url’s die tijdelijk worden doorverwezen naar een url met slechts een slash verschil
+redirs_server_slash,url’s die via een client-side refresh worden doorverwezen naar een url met slechts een slash verschil
+url-aliases,url’s die een alias zijn voor de feitelijke url
+url-aliases_1x,url’s met één alias
+url-aliases_2x,url’s met twee aliassen
+url-aliases_3x,url’s met drie aliassen
+pages_multi-h1,pagina’s met meerdere <h1> tags
+pages_multi-h1_bld-dv-content,dv-contentpagina’s met meerdere <h1> tags
+pages_multi-h1_bld-filter,filterpagina’s met meerdere <h1> tags
+pages_multi-h1_bld-landing,landingspagina’s met meerdere <h1> tags
+pages_multi-h1_None,onbekend type pagina’s met meerdere <h1> tags
+pages_no-h1,pagina’s zonder <h1> tag
+pages_no-title,pagina’s zonder <title> tag

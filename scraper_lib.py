@@ -16,10 +16,6 @@ Functions in this module:
 - text: retrieve essential text content from a page
 """
 
-# TODO: use pathlib for all path manipulations
-# TODO: improve text method to filter non relevant info, such as:
-#     - linefeed in a single text element
-
 
 import re
 import copy
@@ -83,29 +79,12 @@ class ScrapeDB:
                     redir_path TEXT NOT NULL,
                     type       TEXT)''')
             self.exe('''
-                CREATE TABLE links (
-                    page_id	 INTEGER NOT NULL,
-                    link_id  INTEGER,
-                    ext_url  TEXT,
-                    FOREIGN KEY (page_id, link_id)
-                    REFERENCES pages (page_id, page_id)
-                        ON UPDATE RESTRICT
-                        ON DELETE RESTRICT)''')
-            self.exe('''
-                CREATE VIEW "links_expl" AS
-                    SELECT
-                        l.page_id, p1.path AS page_path,
-                        l.link_id, p2.path AS link_path, 
-                        ext_url
-                    FROM links AS l
-                        JOIN pages AS p1 USING (page_id) 
-                        LEFT JOIN pages AS p2 ON link_id = p2.page_id''')
-            self.exe('''
                 CREATE TABLE parameters (
                     name  TEXT PRIMARY KEY NOT NULL UNIQUE,
                     value TEXT NOT NULL)''')
             self.exe(
                 f'INSERT INTO parameters VALUES ("db_version", {self.version})')
+            self.new_links_table()
             logging.info(f'New scrape.db v{self.version} created')
         else:
             qry = 'SELECT value FROM parameters WHERE name = "db_version"'
@@ -270,7 +249,6 @@ class ScrapeDB:
         Returns:
             str|int|float: value of the parameter
         """
-        # TODO: check better on type
         qry = 'SELECT value FROM parameters WHERE name = ?'
         try:
             value = self.exe(qry, [name]).fetchone()[0]
@@ -414,35 +392,82 @@ class ScrapeDB:
                 (:page_id, :business, :category)''',
                  info)
 
-    def purge_links_table(self):
-        """Purge the links table.
+    def new_links_table(self):
+        """Create new table and view to contain derived information of pages.
+
+        The derived_info table will contain information that as such is not
+        available within the retained page, but can be derived from information
+        that is.
+        The pages_full view joins all pages with the extracted as well as the
+        derived information.
+        Existing table and view are deleted before the new ones are created.
 
         Returns:
             None
         """
-        self.exe('DELETE FROM links')
+        self.exe('DROP TABLE IF EXISTS links')
+        self.exe('''
+            CREATE TABLE links (
+                page_id	  INTEGER NOT NULL,
+                link_text TEXT,
+                link_id   INTEGER,
+                ext_url   TEXT,
+                FOREIGN KEY (page_id, link_id)
+                REFERENCES pages (page_id, page_id)
+                    ON UPDATE RESTRICT
+                    ON DELETE RESTRICT)''')
+        self.exe('DROP VIEW IF EXISTS links_expl')
+        self.exe('''
+            CREATE VIEW "links_expl" AS
+                SELECT
+                    l.page_id, p1.path AS page_path, l.link_text,
+                    l.link_id, p2.path AS link_path, ext_url
+                FROM links AS l
+                    JOIN pages AS p1 USING (page_id) 
+                    LEFT JOIN pages AS p2 ON link_id = p2.page_id''')
         self.exe('VACUUM')
-        logging.info('Links table purged')
+        logging.info(
+            'Links table and links_expl view (re)created in scrape.db')
 
-    def add_link(self, page_id, link_id, ext_url):
-        """Add a linkt to the links table.
+    def add_link(self, page_id, link_text, link_id, ext_url):
+        """Add a link to the links table.
 
         In case a link is internal relative to root_url, it should be stored as
         link_id, with ext_url set to None. If the link is external it should be
         stored as (full) ext_url, with link_id set to None.
 
         Args:
-            page_id (int): key into the pages table
-            link_id (int|None): key into the pages table or None
+            page_id (int): key of the originating page into the pages table
+            link_text (str): text of the link
+            link_id (int|None): key of the link into the pages table or None
             ext_url (str|None): complete external url or None
 
         Returns:
             None
         """
         self.exe('''
-            INSERT INTO links (page_id, link_id, ext_url)
-            VALUES (?, ?, ?)''',
-                 [page_id, link_id, ext_url])
+            INSERT INTO links (page_id, link_text, link_id, ext_url)
+            VALUES (?, ?, ?, ?)''',
+                 [page_id, link_text, link_id, ext_url])
+
+    def links_expl(self):
+        """Generator for all links of a stored scrape.
+
+        Iterates over the links stored in the database, yielding a fourfold
+        tuple:
+
+        - path of the originating page (relative to the root of the scrape)
+        - text of the link
+        - if internal relative to scrape root, path of the link, else None
+        - if external relative to scrape root, full url of the link, else None
+
+        Returns:
+            (str, str, str|None, str|None): (page path, link text, link path,
+                link url)
+        """
+        qry = 'SELECT page_path, link_text, link_path, ext_url FROM links_expl'
+        for page_path, link_text, link_path, ext_url in self.exe(qry):
+            yield page_path, link_text, link_path, ext_url
 
     def get_page_extra_info(self, path):
         """Get all basic and extracted information of a page.
@@ -466,7 +491,6 @@ class ScrapeDB:
         Returns:
             dictionary[str, str|date|None]|None: info name:value pair
         """
-        # TODO: can the dict be generated from the fields of the table?
         qry = '''
             SELECT
                 page_id, path, title, num_h1s, first_h1,
@@ -828,8 +852,8 @@ def valid_path(path):
         return True
 
 
-def links(soup, root_url,
-          root_rel=False, excl_hdr_ftr=True, remove_anchor=True):
+def get_links(soup, root_url,
+              root_rel=False, excl_hdr_ftr=True, remove_anchor=True):
     """Retrieve all links from the body of a page.
 
     The links will be absolute url's or paths relative to root_url.
@@ -931,7 +955,7 @@ def populate_links_table(scrape_db):
     for page_id, page_path, page_string in scrape_db.pages():
         page_num += 1
         soup = BeautifulSoup(page_string, features='lxml')
-        page_links = links(soup, root_url, root_rel=True, excl_hdr_ftr=True)
+        page_links = get_links(soup, root_url, root_rel=True, excl_hdr_ftr=True)
 
         # cycle over all links of this page
         for link_text, link_url in page_links:
@@ -940,10 +964,11 @@ def populate_links_table(scrape_db):
             if page:
                 # the link is in the pages table, so there is a page_id
                 link_id = page[0]
-                scrape_db.add_link(page_id, link_id, None)
+                scrape_db.add_link(page_id, link_text, link_id, None)
             else:
-                # the link is saved as external (it might still be internal)
-                scrape_db.add_link(page_id, None, link_url)
+                # the link is saved as external (it might strictly be
+                # internal, but is not present in the pages table)
+                scrape_db.add_link(page_id, link_text, None, link_url)
 
         # print progress and prognosis
         if page_num % 100 == 0:
@@ -1171,9 +1196,9 @@ def derive_info(scrape_db):
                     JOIN derived_info USING (page_id)
                 WHERE link_id = ?
                 GROUP BY category'''
-            categoriess = scrape_db.exe(cat_qry, [page_id]).fetchall()
-            if len(categoriess) == 1:
-                category = categoriess[0][0]
+            categories = scrape_db.exe(cat_qry, [page_id]).fetchall()
+            if len(categories) == 1:
+                category = categories[0][0]
             else:
                 category = 'alg'
         derived_info['category'] = category

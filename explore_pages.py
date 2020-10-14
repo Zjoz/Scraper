@@ -68,9 +68,6 @@ for case, path in test_paths:
     cl = info['classes']
     h1 = info['first_h1']
 
-    # TODO: classes is a list of the strings;
-    #           but one of them is 'cluster pagina'!
-
     sheet.append([path, ttl, lang, md, pt, num_h1s, cl])
 
     if page_num % 250 == 0:

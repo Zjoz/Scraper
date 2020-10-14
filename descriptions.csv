@@ -10,6 +10,7 @@ pages_buss_None,pagina’s voor onbekend organisatieonderdeel
 pages_cat_dv,dienstverleningspagina's
 pages_cat_bib,bibliotheek pagina's
 pages_cat_alg,algemene pagina's
+pages_cat_None,pagina's met onbekende categorie
 redirs,url’s die worden doorverwezen
 redirs_301,url’s die permanent worden doorverwezen
 redirs_302,url’s die tijdelijk worden doorverwezen

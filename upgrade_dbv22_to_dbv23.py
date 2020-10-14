@@ -112,26 +112,9 @@ for scrape_dir in dirs:
     logging.info(
         'Table redirs copied to db v2.3, while normalising redir types')
 
-    # add links table and view
-    dbn.exe('''
-        CREATE TABLE links (
-            page_id	 INTEGER NOT NULL,
-            link_id  INTEGER,
-            ext_url  TEXT,
-            FOREIGN KEY (page_id, link_id)
-            REFERENCES pages (page_id, page_id)
-                ON UPDATE RESTRICT
-                ON DELETE RESTRICT)''')
-    dbn.exe('''
-        CREATE VIEW "links_expl" AS
-            SELECT
-                l.page_id, p1.path AS page_path,
-                l.link_id, p2.path AS link_path, 
-                ext_url
-            FROM links AS l
-                JOIN pages AS p1 USING (page_id) 
-                LEFT JOIN pages AS p2 ON link_id = p2.page_id''')
+    # populate links table
     if links_table:
+        dbn.purge_links_table()
         populate_links_table(dbn)
 
     dbn.exe('VACUUM')

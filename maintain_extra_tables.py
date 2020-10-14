@@ -20,11 +20,11 @@ from scraper_lib import extract_info, derive_info
 from scraper_lib import populate_links_table
 
 # ============================================================================ #
-min_timestamp = '200102-0000'   # scrapes before are not processed
-max_timestamp = '201012-2359'   # scrapes after are not processed
-repop_links_table = True        # repopulate links table
-recre_extract_info = True       # recreate extracted_info table
-recre_derive_info = True        # recreate derived_info table
+min_timestamp = '200101-0000'   # scrapes before are not processed
+max_timestamp = '201005-2359'   # scrapes after are not processed
+recr_links_table = True         # recreate links table
+recr_extract_info = False       # recreate extracted_info table
+recr_derive_info = False        # recreate derived_info table
 within_bd = False               # True when running on the DWB
 # ============================================================================ #
 
@@ -50,14 +50,14 @@ for scrape_dir in dirs:
 
     setup_file_logging(str(scrape_dir), log_level=logging.INFO)
 
-    if repop_links_table:
-        db.purge_links_table()
+    if recr_links_table:
+        db.new_links_table()
         populate_links_table(db)
 
     # (re)creates the info tables and views in the database
-    if recre_extract_info:
+    if recr_extract_info:
         extract_info(db)
-    if recre_derive_info:
+    if recr_derive_info:
         derive_info(db)
 
     db.close()

@@ -51,9 +51,6 @@ root_url of a scrape):
         a join of all columns from the pages and pages_info table
 """
 
-# TODO: add silent mode
-# TODO: change starting parameters into command line arguments and options
-
 import shutil
 import os
 import time
@@ -62,7 +59,7 @@ import logging
 from requests import RequestException
 
 from scraper_lib import ScrapeDB, setup_file_logging
-from scraper_lib import scrape_page, links, valid_path, populate_links_table
+from scraper_lib import scrape_page, get_links, valid_path, populate_links_table
 from scraper_lib import extract_info, derive_info
 from bd_viauu import bintouu, split_uufile
 
@@ -142,8 +139,8 @@ while paths_todo and num_done < max_paths:
 
     # add relevant links to paths_todo list (include links from header and
     # footer to trace all pages)
-    for l_text, l_path in links(soup, root_url, root_rel=True,
-                                excl_hdr_ftr=False, remove_anchor=True):
+    for l_text, l_path in get_links(soup, root_url, root_rel=True,
+                                    excl_hdr_ftr=False, remove_anchor=True):
         if l_path.startswith('/'):
             # link within scope
             if l_path not in (paths_todo | paths_done) and valid_path(l_path):

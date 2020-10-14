@@ -1,7 +1,7 @@
 from bd_viauu import bintouu, split_uufile
 
 # ============================================================================ #
-in_file = '/home/jos/bdscraper/scrapes/201001-0530 - bd-scrape/scrape.db'
+in_file = '/home/jos/bdscraper/scrapes/201005-0430 - bd-scrape/scrape.db'
 part_max_mb = 30
 # ============================================================================ #
 

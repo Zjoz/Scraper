@@ -1,4 +1,4 @@
-"""Extract data to spreadsheets for a range of stored scrapes (version 2.5).
+"""Extract data to spreadsheets for a range of stored scrapes (version 2.7).
 
 Since the real labour is done in the classes and functions of the
 scraper_lib module, the code can stay at a rather high level to keep a clear
@@ -13,14 +13,13 @@ import logging
 from pathlib import Path
 from bs4 import BeautifulSoup
 
-from scraper_lib import ScrapeDB, DataSheet, setup_file_logging
-from scraper_lib import extract_info, derive_info, text
+from scraper_lib import ScrapeDB, DataSheet, setup_file_logging, page_text
 
 # ============================================================================ #
 min_timestamp = '201012-0000'   # scrapes before are not processed
-max_timestamp = '201012-2359'   # scrapes after are not processed
-recre_extract_info = False      # recreates extracted_info table
-recre_derive_info = False       # recreates derived_info table
+max_timestamp = '201019-2359'   # scrapes after are not processed
+renew_info = False              # renew extracted and derived information
+derive_info = False             # renew only derived information
 within_bd = False               # True when running on the DWB
 # ============================================================================ #
 
@@ -44,17 +43,17 @@ for scrape_dir in dirs:
         db.close()
         continue
 
-    setup_file_logging(str(scrape_dir), log_level=logging.INFO)
+    setup_file_logging(scrape_dir, log_level=logging.INFO)
 
     # get some parameters from the scrape
     root_url = db.get_par('root_url')
     num_pages = db.num_pages()
 
-    # (re)creates the info tables and views in the database
-    if recre_extract_info:
-        extract_info(db)
-    if recre_derive_info:
-        derive_info(db)
+    # update pages_info table
+    if renew_info:
+        db.extract_pages_info()
+    if renew_info or derive_info:
+        db.derive_pages_info()
 
     # export pages info to a spreadsheet
     pages_ds = DataSheet('Pages', ('Path', 55), ('Title', 35), ('First h1', 35),
@@ -70,7 +69,7 @@ for scrape_dir in dirs:
         pages_ds.append((info['path'], info['title'], info['first_h1'],
                          info['num_h1s'], info['language'], info['modified'],
                          info['pagetype'], info['classes'], info['business'],
-                         info['category'], text(soup)))
+                         info['category'], page_text(soup)))
 
         page_time = (time.time() - start_time) / page_num
         togo_time = int((num_pages - page_num) * page_time)
@@ -85,7 +84,7 @@ for scrape_dir in dirs:
     # export links to a spreadsheet
     links_ds = DataSheet('Links', ('Page path', 70), ('Link text', 50),
                          ('Link path', 70), ('Link url', 70))
-    for link_info in db.links_expl():
+    for link_info in db.links():
         links_ds.append(link_info)
     links_ds.save(str(scrape_dir / 'links.xlsx'))
     logging.info('Spreadsheet links.xlsx saved to scrape directory')
@@ -101,3 +100,4 @@ for scrape_dir in dirs:
     db.close()
 
     logging.info('Site data extraction completed\n')
+    logging.disable()

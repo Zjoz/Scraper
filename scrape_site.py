@@ -1,4 +1,4 @@
-"""Scrape www.belastingdienst.nl and store the results (version 2.6).
+"""Scrape www.belastingdienst.nl and store the results (version 2.7).
 
 Since scraping is not always possible from within the belastingdienst
 organisation, this module is supposed to run on a private pc with an open
@@ -29,7 +29,6 @@ root_url of a scrape):
             page-request for later extraction of data and other information
 
     table redirs, with columns:
-        redir_id (integer): key to a specific redirect
         req_path (text): requested path
         redir_path (text): path to where the request was directed
         type (text): nature of the redirect
@@ -51,35 +50,33 @@ root_url of a scrape):
         a join of all columns from the pages and pages_info table
 """
 
-import shutil
-import os
 import time
 import re
 import logging
 from requests import RequestException
+from pathlib import Path
 
 from scraper_lib import ScrapeDB, setup_file_logging
-from scraper_lib import scrape_page, get_links, valid_path, populate_links_table
-from scraper_lib import extract_info, derive_info
+from scraper_lib import scrape_page, page_links, valid_path
 from bd_viauu import bintouu, split_uufile
 
 # ============================================================================ #
 root_url = 'https://www.belastingdienst.nl/wps/wcm/connect'
 start_path = '/nl/home'
 max_paths = 15000           # total some 10000 actual (paths, not pages)
-do_links_table = True       # populate links table
-do_extract_info = True      # add extracted_info table
-do_derive_info = True       # add derived_info table (only when also extract)
+links_table = True          # populate links table
+extract_info = True         # add extracted_info
+derive_info = True          # add derived_info (only when also extract)
 publish = True
 publ_dir = '/var/www/bds/scrapes'
 # ============================================================================ #
 
 # setup output and database
 timestamp = time.strftime('%y%m%d-%H%M')
-dir_name = timestamp + ' - bd-scrape'
-os.mkdir(dir_name)
-publ_path = os.path.join(publ_dir, dir_name)
-db_file = os.path.join(dir_name, 'scrape.db')
+scrape_dir = Path(f'{timestamp} - bd-scrape')
+scrape_dir.mkdir()
+publ_dir = Path(publ_dir) / scrape_dir.stem
+db_file = scrape_dir / 'scrape.db'
 db = ScrapeDB(db_file, create=True)
 db.upd_par('root_url', root_url)
 db.upd_par('start_path', start_path)
@@ -87,7 +84,7 @@ db.upd_par('timestamp', timestamp)
 
 # setup logging; all log messages go to file, console receives warnings and
 # higher severity messages
-setup_file_logging(dir_name, log_level=logging.INFO)
+setup_file_logging(scrape_dir, log_level=logging.INFO)
 console_handler = logging.StreamHandler()
 console_handler.setLevel(logging.WARNING)
 console_handler.setFormatter(
@@ -101,8 +98,6 @@ num_done = 0
 
 start_time = time.time()
 logging.info('Site scrape started')
-logging.info(f'    root_url: {root_url}')
-logging.info(f'    start_path: {start_path}')
 
 while paths_todo and num_done < max_paths:
 
@@ -132,15 +127,15 @@ while paths_todo and num_done < max_paths:
                 paths_done.add(req_path)
             if red_path.startswith('/'):
                 paths_done.add(red_path)
-            redir_id = db.add_redir(req_path, red_path, redir_type)
+            db.add_redir(req_path, red_path, redir_type)
     else:
         paths_done.add(req_path)
     num_done += 1
 
     # add relevant links to paths_todo list (include links from header and
     # footer to trace all pages)
-    for l_text, l_path in get_links(soup, root_url, root_rel=True,
-                                    excl_hdr_ftr=False, remove_anchor=True):
+    for l_text, l_path in page_links(soup, root_url, root_rel=True,
+                                     excl_hdr_ftr=False, remove_anchor=True):
         if l_path.startswith('/'):
             # link within scope
             if l_path not in (paths_todo | paths_done) and valid_path(l_path):
@@ -155,26 +150,22 @@ while paths_todo and num_done < max_paths:
               f'todo, {togo_time//60}:{togo_time % 60:02} min togo')
 
 elapsed = int(time.time() - start_time)
-logging.info(f'Site scrape finished in {elapsed//60}:{elapsed % 60:02} min')
-logging.info(f'    pages: {db.num_pages()}')
-logging.info(f'    redirs: {db.num_redirs()}\n')
+logging.info(f'Site scrape finished in {elapsed//60}:{elapsed % 60:02} min\n')
 
-if do_links_table:
-    populate_links_table(db)
+if links_table:
+    db.fetch_pages_links()
 
-if do_extract_info:
-    extract_info(db)
-    if do_derive_info:
-        derive_info(db)
+if extract_info:
+    db.extract_pages_info()
+    if derive_info:
+        db.derive_pages_info()
 
 db.close()
 
 if publish:
     # prepare database for publication
-    uu_file = db_file + '.uu'
-    bintouu(db_file, uu_file)
+    uu_file = bintouu(db_file)
     split_uufile(uu_file, max_mb=30)
-    os.remove(uu_file)
 
     # publish results
-    shutil.move(dir_name, publ_path)
+    scrape_dir.replace(publ_dir)

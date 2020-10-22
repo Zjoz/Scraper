@@ -11,6 +11,23 @@ pages_cat_dv,dienstverleningspagina's
 pages_cat_bib,bibliotheek pagina's
 pages_cat_alg,algemene pagina's
 pages_cat_None,pagina's met onbekende categorie
+pages_type_bld-filter,filterpagina’s
+pages_type_bld-dv-content,topic pagina’s
+pages_type_bld-targetGroup,"voormalige startpagina's particulier, zakelijk, intermediairs en douane voor bedrijven"
+pages_type_bld-landing,landingspagina’s (bibliotheek)
+pages_type_bld-bd,pagina’s met belangrijke datums
+pages_type_bld-sitemap,thema pagina’s (bibliotheek)
+pages_type_bld-overview,overzichtspagina’s (bibliotheek)
+pages_type_bld-cluster,clusterpagina’s (bibliotheek)
+pages_type_bld-direction,wegwijzerpagina’s (bibliotheek)
+pages_type_bld-target,doelpagina’s (bibliotheek contentpagina’s)
+pages_type_bld-outage,pagina’s met verstoringsberichten
+pages_type_bld-newsItem,pagina’s met nieuwsberichten
+pages_type_bld-wrapper,voorlooppagina’s
+pages_type_bld-iahWrapper,voorlooppagina’s interactieve hulpmiddelen
+pages_type_bld-concept,pagina’s met begrippen
+pages_type_bld-faq,pagina’s met vragen en antwoorden
+pages_type_None,pagina’s van onbekend type
 redirs,url’s die worden doorverwezen
 redirs_301,url’s die permanent worden doorverwezen
 redirs_302,url’s die tijdelijk worden doorverwezen

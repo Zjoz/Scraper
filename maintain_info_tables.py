@@ -1,4 +1,4 @@
-"""Maintain the info and links tables for a range of scrapes (version 1.0).
+"""Maintain the info and links tables for a range of scrapes (version 1.2).
 
 Since all functions of this module are included in the scraper module
 (scrape_site.py), this module is for maintenance only.
@@ -16,15 +16,13 @@ import logging
 from pathlib import Path
 
 from scraper_lib import ScrapeDB, setup_file_logging
-from scraper_lib import extract_info, derive_info
-from scraper_lib import populate_links_table
 
 # ============================================================================ #
-min_timestamp = '200101-0000'   # scrapes before are not processed
-max_timestamp = '201005-2359'   # scrapes after are not processed
-recr_links_table = True         # recreate links table
-recr_extract_info = False       # recreate extracted_info table
-recr_derive_info = False        # recreate derived_info table
+min_timestamp = '201019-0000'   # scrapes before are not processed
+max_timestamp = '201019-2359'   # scrapes after are not processed
+links_table = False             # repopulate links table
+renew_info = False              # renew extracted and derived information
+derive_info = False             # renew only derived information
 within_bd = False               # True when running on the DWB
 # ============================================================================ #
 
@@ -48,16 +46,16 @@ for scrape_dir in dirs:
         db.close()
         continue
 
-    setup_file_logging(str(scrape_dir), log_level=logging.INFO)
+    setup_file_logging(scrape_dir, log_level=logging.INFO)
 
-    if recr_links_table:
-        db.new_links_table()
-        populate_links_table(db)
+    if links_table:
+        db.fetch_pages_links()
 
-    # (re)creates the info tables and views in the database
-    if recr_extract_info:
-        extract_info(db)
-    if recr_derive_info:
-        derive_info(db)
+    # update pages_info table
+    if renew_info:
+        db.extract_pages_info()
+    if renew_info or derive_info:
+        db.derive_pages_info()
 
     db.close()
+    logging.disable()

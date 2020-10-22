@@ -20,7 +20,7 @@ TODO: what can we do with robots.txt and sitemap.xml?
 Releases
 ========
 
-Release 2.5.1 (development)
+Release 2.6 (development)
     - scraper_lib               v2.7
     - scrape_site               v2.7
     - create_sheets             v2.7

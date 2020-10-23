@@ -98,6 +98,8 @@ num_done = 0
 
 start_time = time.time()
 logging.info('Site scrape started')
+logging.info(f'    root_url: {root_url}')
+logging.info(f'    start_path: {start_path}')
 
 while paths_todo and num_done < max_paths:
 
@@ -150,7 +152,8 @@ while paths_todo and num_done < max_paths:
               f'todo, {togo_time//60}:{togo_time % 60:02} min togo')
 
 elapsed = int(time.time() - start_time)
-logging.info(f'Site scrape finished in {elapsed//60}:{elapsed % 60:02} min\n')
+logging.info(f'Site scrape finished in {elapsed//60}:{elapsed % 60:02} min')
+logging.info(f'    pages: {db.num_pages()}\n')
 
 if links_table:
     db.fetch_pages_links()

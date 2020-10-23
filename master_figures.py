@@ -1,4 +1,4 @@
-"""Generate key and dimensionsl figures for scrape range (version 1.1).
+"""Generate key and dimensionsl figures for scrape range (version 1.2).
 
 Key and dimensional figures will be generated for all the scrapes within the
 given range and (re)written to the scrape_master database.
@@ -53,7 +53,7 @@ for scrape_dir in dirs:
     # pages per language
     qry = '''
         SELECT language, count(*)
-        FROM pages_full 
+        FROM pages_info 
         GROUP BY language
         ORDER BY language DESC'''
     pages_lang = sdb.exe(qry).fetchall()
@@ -63,7 +63,7 @@ for scrape_dir in dirs:
     # pages per business
     qry = '''
         SELECT business, count(*)
-        FROM pages_full 
+        FROM pages_info 
         GROUP BY business
         ORDER BY business'''
     pages_buss = sdb.exe(qry).fetchall()
@@ -73,7 +73,7 @@ for scrape_dir in dirs:
     # pages per category
     qry = '''
         SELECT category, count(*)
-        FROM pages_full 
+        FROM pages_info 
         GROUP BY category
         ORDER BY business DESC'''
     pages_cat = sdb.exe(qry).fetchall()
@@ -83,7 +83,7 @@ for scrape_dir in dirs:
     # pages per type
     qry = '''
         SELECT pagetype, count(*)
-        FROM pages_full
+        FROM pages_info
         GROUP BY pagetype
         ORDER BY category DESC, count(*) ASC'''
     types_count = sdb.exe(qry).fetchall()
@@ -134,13 +134,16 @@ for scrape_dir in dirs:
         mdb_exe(kf_qry, [f'url-aliases_{alias_per_url}x', count])
 
     # pages with more than one h1's
-    qry = 'SELECT count(*) FROM pages_full WHERE num_h1s > 1'
+    qry = '''
+        SELECT count(*)
+        FROM pages_info
+        WHERE num_h1s > 1'''
     mdb_exe(kf_qry, ['pages_multi-h1', sdb.exe(qry).fetchone()[0]])
 
     # pages per type with more than one h1's
     qry = '''
         SELECT pagetype, count(*)
-        FROM pages_full
+        FROM pages_info
         WHERE num_h1s > 1
         GROUP BY pagetype'''
     multi_h1s = sdb.exe(qry).fetchall()
@@ -150,16 +153,39 @@ for scrape_dir in dirs:
     # pages with no h1
     qry = '''
         SELECT count(*) 
-        FROM pages_full 
+        FROM pages_info 
         WHERE num_h1s = 0'''
     mdb_exe(kf_qry, ['pages_no-h1', sdb.exe(qry).fetchone()[0]])
 
     # pages without title
     qry = '''
         SELECT count(*) 
-        FROM pages_full 
-        WHERE title is NULL'''
+        FROM pages_info 
+        WHERE title = '' or title is NULL'''
     mdb_exe(kf_qry, ['pages_no-title', sdb.exe(qry).fetchone()[0]])
+
+    # pages with non unique title
+    qry = '''
+        SELECT sum(c) FROM 
+            (SELECT count(*) as c
+            FROM pages_info
+            GROUP BY title)
+        WHERE c > 1'''
+    mdb_exe(kf_qry, ['pages_dupl-title', sdb.exe(qry).fetchone()[0]])
+
+    # pages without description
+    qry = '''
+        SELECT count(*) 
+        FROM pages_info 
+        WHERE description = '' or description is NULL'''
+    mdb_exe(kf_qry, ['pages_no-descr', sdb.exe(qry).fetchone()[0]])
+
+    # pages with description longer than 160 characters
+    qry = '''
+        SELECT count(*) 
+        FROM pages_info 
+        WHERE length(description) > 160'''
+    mdb_exe(kf_qry, ['pages_long-descr', sdb.exe(qry).fetchone()[0]])
 
     # dimensional figures
     qry = '''
@@ -179,5 +205,7 @@ for scrape_dir in dirs:
     # actions for a scrape end here
 
     sdb.close()
+
+    print(f'Typical figures saved to master database for scrape of {timestamp}')
 
 mdb_conn.close()

@@ -47,3 +47,6 @@ pages_multi-h1_bld-landing,landingspagina’s met meerdere <h1> tags
 pages_multi-h1_None,onbekend type pagina’s met meerdere <h1> tags
 pages_no-h1,pagina’s zonder <h1> tag
 pages_no-title,pagina’s zonder <title> tag
+pages_dupl-title,pagina's met niet unieke <title> tag
+pages_no-descr,pagina's zonder of met lege <meta> description tag
+pages_long-descr,pagina's met <meta> description langer dan 160 tekens

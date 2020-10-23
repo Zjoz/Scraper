@@ -1,4 +1,4 @@
-"""Extract data to spreadsheets for a range of stored scrapes (version 2.7).
+"""Extract data to spreadsheets for a range of stored scrapes (version 2.8).
 
 Since the real labour is done in the classes and functions of the
 scraper_lib module, the code can stay at a rather high level to keep a clear
@@ -16,11 +16,14 @@ from bs4 import BeautifulSoup
 from scraper_lib import ScrapeDB, DataSheet, setup_file_logging, page_text
 
 # ============================================================================ #
-min_timestamp = '201012-0000'   # scrapes before are not processed
-max_timestamp = '201019-2359'   # scrapes after are not processed
-renew_info = False              # renew extracted and derived information
-derive_info = False             # renew only derived information
-within_bd = False               # True when running on the DWB
+min_timestamp = '201012-0000'  # scrapes before are not processed
+max_timestamp = '201012-2359'  # scrapes after are not processed
+pages_sheet = True  # (re)create pages.xlsx
+links_sheet = False  # (re)create links.xlsx
+redirs_sheet = False  # (re)create redirs.xlsx
+renew_info = False  # renew extracted and derived information
+derive_info = False  # renew only derived information
+within_bd = False  # True when running on the DWB
 # ============================================================================ #
 
 # establish master scrape directory
@@ -56,48 +59,55 @@ for scrape_dir in dirs:
         db.derive_pages_info()
 
     # export pages info to a spreadsheet
-    pages_ds = DataSheet('Pages', ('Path', 55), ('Title', 35), ('First h1', 35),
-                         ("# h1's", 9), ('Language', 12), ('Modified', 15),
-                         ('Page type', 20), ('Classes', 25), ('Business', 20),
-                         ('Category', 12), ('Page text', 55))
-    start_time = time.time()
-    logging.info('Site data extraction started')
-    page_num = 0
-    for info in db.pages_full():
-        page_num += 1
-        soup = BeautifulSoup(info['doc'], features='lxml')
-        pages_ds.append((info['path'], info['title'], info['first_h1'],
-                         info['num_h1s'], info['language'], info['modified'],
-                         info['pagetype'], info['classes'], info['business'],
-                         info['category'], page_text(soup)))
+    if pages_sheet:
+        pages_ds = DataSheet(
+            'Pages', ('Path', 55), ('Title', 35), ('Description', 35),
+            ('First h1', 35), ("# h1's", 9), ('Language', 12), ('Modified', 15),
+            ('Page type', 20), ('Classes', 25), ('Business', 20),
+            ('Category', 12), ('Page text', 55))
+        start_time = time.time()
+        logging.info('Sheet creation started')
+        page_num = 0
+        for info in db.pages_full():
+            page_num += 1
+            soup = BeautifulSoup(info['doc'], features='lxml')
+            pages_ds.append(
+                (info['path'], info['title'], info['description'],
+                 info['first_h1'], info['num_h1s'], info['language'],
+                 info['modified'], info['pagetype'], info['classes'],
+                 info['business'], info['category'], page_text(soup)))
 
-        page_time = (time.time() - start_time) / page_num
-        togo_time = int((num_pages - page_num) * page_time)
-        if page_num % 100 == 0:
-            print(f'creating sheets for scrape of {timestamp} - togo: '
-                  f'{num_pages - page_num} pages / '
-                  f'{togo_time // 60}:{togo_time % 60:02} min')
+            page_time = (time.time() - start_time) / page_num
+            togo_time = int((num_pages - page_num) * page_time)
+            if page_num % 250 == 0:
+                print(f'creating sheets for scrape of {timestamp} - togo: '
+                      f'{num_pages - page_num} pages / '
+                      f'{togo_time // 60}:{togo_time % 60:02} min')
 
-    pages_ds.save(str(scrape_dir / 'pages.xlsx'))
-    logging.info('Spreadsheet pages.xlsx saved to scrape directory')
+        pages_ds.save(str(scrape_dir / 'pages.xlsx'))
+        logging.info('Spreadsheet pages.xlsx saved to scrape directory')
 
     # export links to a spreadsheet
-    links_ds = DataSheet('Links', ('Page path', 70), ('Link text', 50),
-                         ('Link path', 70), ('Link url', 70))
-    for link_info in db.links():
-        links_ds.append(link_info)
-    links_ds.save(str(scrape_dir / 'links.xlsx'))
-    logging.info('Spreadsheet links.xlsx saved to scrape directory')
+    if links_sheet:
+        links_ds = DataSheet(
+            'Links', ('Page path', 70), ('Link text', 50), ('Link path', 70),
+            ('Link url', 70))
+        for link_info in db.links():
+            links_ds.append(link_info)
+        links_ds.save(str(scrape_dir / 'links.xlsx'))
+        logging.info('Spreadsheet links.xlsx saved to scrape directory')
 
     # export redirects to a spreadsheet
-    redirs_ds = DataSheet('Redirs', ('Requested path', 110),
-                          ('Redirected path', 110), ('Type', 10))
-    for redir in db.redirs():
-        redirs_ds.append(redir)
-    redirs_ds.save(str(scrape_dir / 'redirs.xlsx'))
-    logging.info('Spreadsheet redirs.xlsx saved to scrape directory')
+    if redirs_sheet:
+        redirs_ds = DataSheet(
+            'Redirs', ('Requested path', 110), ('Redirected path', 110),
+            ('Type', 10))
+        for redir in db.redirs():
+            redirs_ds.append(redir)
+        redirs_ds.save(str(scrape_dir / 'redirs.xlsx'))
+        logging.info('Spreadsheet redirs.xlsx saved to scrape directory')
 
     db.close()
 
-    logging.info('Site data extraction completed\n')
+    logging.info('Sheet creation completed\n')
     logging.disable()

@@ -2,14 +2,11 @@ Coming up
 =========
 
 Enhancements:
-TODO: add meta description as info field; check on length?
 TODO: improve text retrieval from pages
 TODO: key figures from internal and external links?
-TODO: add silent mode to various functions and methods?
 TODO: change starting parameters into command line arguments and options for scrape_site
 
 New functionality:
-TODO: non-unique titles
 TODO: retrieve usage data of pages via Matomo API to identify poor used pages
 TODO: analyse changes in pages over time
 
@@ -20,7 +17,25 @@ TODO: what can we do with robots.txt and sitemap.xml?
 Releases
 ========
 
-Release 2.6 (development)
+Release 2.7 (23-10-2020)
+    - database                  v2.5
+    - scraper_lib               v2.8
+    - scrape_site               v2.7
+    - create_sheets             v2.8
+    - master_figures            v1.2
+    - maintain_info_tables      v1.2
+    - bd_viauu                  v1.1
+    - bd_send                   v1.0
+    - bd_receive                v1.0
+    - convert_dbv24_to_dbv25
+    Changes
+        - meta description field added to database
+        - adapted mudules scraper_lib, scrape_site, create_sheets
+        - conversion module for updating existing scrape databases
+        - added 3 key figures to master database: pages_dupl-title, pages_no-descr, pages_long-descr
+
+Release 2.6 (22-10-2020)
+    - database                  v2.4
     - scraper_lib               v2.7
     - scrape_site               v2.7
     - create_sheets             v2.7
@@ -32,6 +47,7 @@ Release 2.6 (development)
     - upgrade_dbv23_to_dbv24
 
 Release 2.5 (14-10-2020)
+    - database                  v2.3
     - scraper_lib               v2.5
     - scrape_site               v2.6
     - create_sheets             v2.5
@@ -40,6 +56,7 @@ Release 2.5 (14-10-2020)
     - upgrade_dbv22_to_dbv23
 
 Release 2.4 (29-9-2020)
+    - database                  v2.2
     - scraper_lib               v2.4
     - scrape_site               v2.5
     - create_sheets             v2.4

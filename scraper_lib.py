@@ -1,4 +1,4 @@
-"""Classes and functions for scraping www.belastingdienst.nl (version 2.7).
+"""Classes and functions for scraping www.belastingdienst.nl (version 2.8).
 
 Classes in this module:
 
@@ -55,9 +55,10 @@ class ScrapeDB:
     Class constants define some of the class behaviour.
     """
 
-    version = '2.4'
+    version = '2.5'
     extracted_fields = [
         ('title', 'TEXT'),
+        ('description', 'TEXT'),
         ('num_h1s', 'INTEGER'),
         ('first_h1', 'TEXT'),
         ('language', 'TEXT'),
@@ -70,7 +71,7 @@ class ScrapeDB:
         ('category', 'TEXT')
     ]
 
-    def __init__(self, db_file, create=False):
+    def __init__(self, db_file, create=False, version_check=True):
         """Initiates the database object that encapsulates a scrape database.
 
         Writes the database version in the parameters table while creating a
@@ -80,6 +81,7 @@ class ScrapeDB:
         Args:
             db_file (Path): name or path of the database file
             create (bool): create & connect database if True, else just connect
+            version_check (bool): disable version check if False
         """
         #
         # When db is on a networked drive maybe use next SQLite options to
@@ -130,7 +132,7 @@ class ScrapeDB:
         else:
             qry = 'SELECT value FROM parameters WHERE name = "db_version"'
             db_version = self.exe(qry).fetchone()[0]
-            if db_version != self.version:
+            if version_check and db_version != self.version:
                 logging.error(f'Incompatible database version: {db_version}')
                 raise sqlite3.DatabaseError(
                     f'Incompatible database version: {db_version}')
@@ -368,7 +370,9 @@ class ScrapeDB:
             (str, str, str|None, str|None): (page path, link text, link path,
                 link url)
         """
-        qry = 'SELECT page_path, link_text, link_path, ext_url FROM links_expl'
+        qry = '''
+            SELECT page_path, link_text, link_path, ext_url
+            FROM links_explicit'''
         for page_path, link_text, link_path, ext_url in self.exe(qry):
             yield page_path, link_text, link_path, ext_url
 
@@ -381,6 +385,7 @@ class ScrapeDB:
             - 'path': (str) path
             - 'doc': (str) html source
             - 'title': (str) title
+            - 'description': (str) description
             - 'num_h1s': (int) number of h1 tags
             - 'first_h1': (str) text of the first h1 tag
             - 'language': (str) language
@@ -419,6 +424,7 @@ class ScrapeDB:
             - 'page_id': (int) page_id
             - 'path': (str) path
             - 'doc': (str) html source
+            - 'description': (str) description
             - 'title': (str) title
             - 'num_h1s': (int) number of h1 tags
             - 'first_h1': (str) text of the first h1 tag
@@ -460,6 +466,7 @@ class ScrapeDB:
         The following information is added for each page:
 
         - title: content of <title> tag
+        - description: content of <meta name="description" content="..." />
         - num_h1s: number <h1>'s
         - first_h1: text of the first h1
         - language: content of <meta name="language" content="xx" />
@@ -524,6 +531,21 @@ class ScrapeDB:
                     logging.warning(f'Page with empty title: {path}')
             info['title'] = title
 
+            # get description
+            description = soup.head.find(attrs={'name': 'description'})
+            if not description:
+                # there are more then 800 occurences of this situation
+                # TODO: log missing description as warning when this is
+                #       a rare exception only
+                logging.debug(
+                    f'Page has no <meta name="description"/> tag: {path}')
+                description = None
+            else:
+                description = description['content']
+                if not description:
+                    logging.warning(f'Page with empty description: {path}')
+            info['description'] = description
+
             # get language
             language = soup.head.find('meta', attrs={'name': 'language'})
             if not language:
@@ -586,14 +608,10 @@ class ScrapeDB:
             info['first_h1'] = h1s[0] if h1s else None
 
             # add info to the database
-            self.exe('''
-                INSERT INTO pages_info
-                    (page_id, title, num_h1s, first_h1,
-                    language, modified, pagetype, classes)
-                VALUES
-                    (:page_id, :title, :num_h1s, :first_h1,
-                    :language, :modified, :pagetype, :classes)''',
-                     info)
+            fields = ', '.join(info)
+            qmarks = ', '.join('?' for i in range(len(info)))
+            self.exe(f'INSERT INTO pages_info ({fields}) VALUES ({qmarks})',
+                     list(info.values()))
 
             # print progress and prognosis
             if page_num % 250 == 0:
@@ -693,12 +711,12 @@ class ScrapeDB:
             fields['category'] = category
 
             # save the derived fields in the pages_info table
-            self.exe('''
+            set_str = ', '.join(f'{k} = :{k}' for k in fields)
+            self.exe(f'''
                 UPDATE pages_info
-                SET business = :business,
-                    category = :category
-                WHERE
-                    page_id = :page_id''', fields)
+                SET {set_str}
+                WHERE page_id = :page_id''',
+                     fields)
 
             # print progress and prognosis
             if page_num % 500 == 0:

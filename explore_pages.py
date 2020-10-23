@@ -56,9 +56,9 @@ for case, path in test_paths:
 
     info = db.page_full_info(path)
     soup = BeautifulSoup(info['doc'], features='lxml')
-    tag = soup.head.find(attrs={'name': 'description'})
-    if tag:
-        description = tag['content']
+    description = soup.head.find(attrs={'name': 'description'})
+    if description:
+        description = description['content']
     else:
         description = None
     url = root_url + path

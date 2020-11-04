@@ -29,6 +29,7 @@ import sqlite3
 import zlib
 import time
 from bs4 import BeautifulSoup
+from bs4 import NavigableString, Tag, Comment, Script, Stylesheet
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from openpyxl.cell import WriteOnlyCell
@@ -55,7 +56,7 @@ class ScrapeDB:
     Class constants define some of the class behaviour.
     """
 
-    version = '2.5'
+    version = '2.6'
     extracted_fields = [
         ('title', 'TEXT'),
         ('description', 'TEXT'),
@@ -64,7 +65,8 @@ class ScrapeDB:
         ('language', 'TEXT'),
         ('modified', 'DATE'),
         ('pagetype', 'TEXT'),
-        ('classes', 'TEXT')
+        ('classes', 'TEXT'),
+        ('ed_content', 'TEXT')
     ]
     derived_fields = [
         ('business', 'TEXT'),
@@ -392,6 +394,7 @@ class ScrapeDB:
             - 'modified': (date) last modification date
             - 'pagetype': (str) type
             - 'classes': (str) classes separated by spaces
+            - 'ed_content': (str) newline seperated editorial content
             - 'business': (str) 'belastingen', 'toeslagen' or 'douane'
             - 'category': (str) 'dv', 'bib' or 'alg'
 
@@ -432,6 +435,7 @@ class ScrapeDB:
             - 'modified': (date) last modification date
             - 'pagetype': (str) type
             - 'classes': (str) classes separated by spaces
+            - 'ed_content': (str) newline seperated editorial content
             - 'business': (str) 'belastingen', 'toeslagen' or 'douane'
             - 'category': (str) 'dv', 'bib' or 'alg'
 
@@ -473,6 +477,7 @@ class ScrapeDB:
         - modified: content of <meta name="DCTERMS.modified" content="date" />
         - pagetype: attribute value of <body data-pageType="...">
         - classes: attribute value of <body class="...">
+        - ed_content: editorial content of the page
 
         The pages_info table accommodates additional fields to contain
         derived information for each page. This is further detailed in the
@@ -546,6 +551,15 @@ class ScrapeDB:
                     logging.warning(f'Page with empty description: {path}')
             info['description'] = description
 
+            # get info from <h1> tags
+            h1s = []
+            for h1 in soup.find_all('h1'):
+                h1s.append(h1.text)
+            if len(h1s) == 0:
+                logging.warning(f'Page without h1: {path}')
+            info['num_h1s'] = len(h1s)
+            info['first_h1'] = h1s[0] if h1s else None
+
             # get language
             language = soup.head.find('meta', attrs={'name': 'language'})
             if not language:
@@ -598,14 +612,8 @@ class ScrapeDB:
                         f'Page with empty class in <body> tag: {path}')
             info['classes'] = ' '.join(classes) if classes else None
 
-            # get info from <h1> tags
-            h1s = []
-            for h1 in soup.find_all('h1'):
-                h1s.append(h1.text)
-            if len(h1s) == 0:
-                logging.warning(f'Page without h1: {path}')
-            info['num_h1s'] = len(h1s)
-            info['first_h1'] = h1s[0] if h1s else None
+            # get editorial content
+            info['ed_content'] = editorial_content(soup, add_content=True)
 
             # add info to the database
             fields = ', '.join(info)
@@ -1028,40 +1036,136 @@ def page_links(soup, root_url,
     return links
 
 
-def page_text(soup):
+def editorial_content(soup, add_content=True):
     """Retrieve essential text content from a page.
-
-    Only text from <body> is included.
 
     Next tags are excluded:
 
+    - <head>
     - <header>
     - <footer>
-    - <div id="bld-nojs">
+    - <div id="bld-nojs"> : for situation that javascript is not active
+    - <div class="bld-subnavigatie"> : left side navigation of bib pages
+    - <div class="bld-feedback"> : bottom feedback of content page
+    - readspeaker buttons
+    - modal dialog for virtual assistant
 
-    Leading and trailing whitespace is removed.
+    Whitespace is normalised and text chunks ar seperated by newlines.
 
     Args:
         soup (BeautifulSoup): bs4 representation of a page
+        add_content (bool): include content of div class with this name if True
 
     Returns:
-        str: newline separated chunks of extracted text
+        str: extracted text content of the page
     """
+
     # make working copy of the soup doc, since removing branches is destructive
     sc = copy.copy(soup)
 
-    # remove branches
-    div_nojs = sc.find('div', id='bld-nojs')
-    if div_nojs:
-        div_nojs.clear()
+    # remove head, header and footer branches
+    sc.head.clear()
     if sc.body.header:
         sc.body.header.clear()
     if sc.body.footer:
         sc.body.footer.clear()
 
-    # get the text to return
-    txt = sc.body.get_text(separator='\n', strip=True)
+    # remove content for non active javascript
+    div_nojs = sc.find('div', id='bld-nojs')
+    if div_nojs:
+        div_nojs.clear()
+
+    # remove sub-navigation
+    div_subnav = sc.find(class_='bld-subnavigatie')
+    if div_subnav:
+        div_subnav.clear()
+
+    # remove feedback
+    div_feedback = sc.find(class_='bld-feedback')
+    if div_feedback:
+        div_feedback.clear()
+
+    # remove additional content if needed
+    if not add_content:
+        for tag in sc.find_all('div', class_='content_add'):
+            tag.clear()
+
+    # remove readspeaker buttons
+    for tag in sc.find_all('div', class_='rsbtn'):
+        tag.clear()
+
+    # remove modal dialog for the virtual assistant
+    for tag in sc.find_all('div', id='vaModal'):
+        tag.clear()
+
+    flatten_tagbranch_to_navstring(sc.html)
+
+    # replace non-breaking spaces with normal ones
+    txt = sc.text.replace(b'\xc2\xa0'.decode(), ' ')
+
+    # subsitute one space for any cluster of whitespace chars (getting rid
+    # of returns, newlines, tabs, spaces, etc.; this is html, you know!)
+    txt = re.sub(r'\s+', ' ', txt)
+
+    # change marked <br>'s to newlines, while reducing multiples seperated by
+    # whitespace only; the final strip() removes potential trailing newlines
+    txt = re.sub(r'\s*(#br#\s*)+\s*', r'\n', txt).strip()
 
     # remove the working copy of the soup doc
     sc.decompose()
     return txt
+
+
+def flatten_tagbranch_to_navstring(tag: Tag):
+    """Reduce a complete tag branch to one NavigableString.
+
+    The reduction is realised within the BeautifulSoup data structure that
+    the tag is part of. This means that the function replaces the tag branche
+    (in place) into a single NavigableString containing all text of the tag
+    branch.
+
+    The function uses a recursive tree traversal with a NavigableString as
+    leaf. Each instance of the function will combine the text content of all
+    children into one NavigableString. Within this string all <br> tags are
+    replaced by '#br#' markers. The text content of all former <p>, <h1>,
+    <h2>, <h3>, <li> and <div> tags in the tag branche is enclosed with two
+    '#br#' markers in this resulting NavigableString.
+
+    The '#br#' markers in the resulting NavigableString act as seperators
+    between logical chunks of text. Potentially there can be more consequetive
+    '#br#' markers, which has no real significance.
+
+    Args:
+        tag (Tag): part of BeautifulSoup structure that will be reduced
+
+    Returns:
+        None (tag is replaced in place with one NavigableString)
+    """
+
+    # final leaf cases; done with the branch
+    if type(tag) in {NavigableString, Comment, Script, Stylesheet}:
+        return
+
+    tag_children = list(tag.children)
+    child_types = {type(c) for c in tag_children}
+
+    # are there children other then NavigableStrings?
+    if tag_children and child_types != {NavigableString}:
+        # flatten all child branches to NavigableStrings
+        for c in tag_children:
+            flatten_tagbranch_to_navstring(c)
+
+    # at this point all children (if any) are NavigableStrings
+
+    tag_name = tag.name
+    if tag_name == 'br':
+        tag.replace_with('#br#')
+    elif tag_name == 'a':
+        tag.replace_with(f' {tag.text}')  # the leading space is significant
+    elif tag_name in {'p', 'h1', 'h2', 'h3', 'li', 'div'}:
+        tag_text = tag.text
+        tag.replace_with(f'#br#{tag_text}#br#')
+    else:
+        tag.replace_with(tag.text)
+
+    return

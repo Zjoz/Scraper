@@ -1,4 +1,4 @@
-"""Extract data to spreadsheets for a range of stored scrapes (version 2.8).
+"""Extract data to spreadsheets for a range of stored scrapes (version 2.9).
 
 Since the real labour is done in the classes and functions of the
 scraper_lib module, the code can stay at a rather high level to keep a clear
@@ -13,17 +13,17 @@ import logging
 from pathlib import Path
 from bs4 import BeautifulSoup
 
-from scraper_lib import ScrapeDB, DataSheet, setup_file_logging, page_text
+from scraper_lib import ScrapeDB, DataSheet, setup_file_logging, editorial_content
 
 # ============================================================================ #
-min_timestamp = '201012-0000'  # scrapes before are not processed
-max_timestamp = '201012-2359'  # scrapes after are not processed
-pages_sheet = True  # (re)create pages.xlsx
-links_sheet = False  # (re)create links.xlsx
-redirs_sheet = False  # (re)create redirs.xlsx
-renew_info = False  # renew extracted and derived information
-derive_info = False  # renew only derived information
-within_bd = False  # True when running on the DWB
+min_timestamp = '201102-0000'   # scrapes before are not processed
+max_timestamp = '201102-2359'   # scrapes after are not processed
+pages_sheet = True              # (re)create pages.xlsx
+links_sheet = False             # (re)create links.xlsx
+redirs_sheet = False            # (re)create redirs.xlsx
+renew_info = False              # renew extracted and derived information
+derive_info = False             # renew only derived information
+within_bd = False               # True when running on the DWB
 # ============================================================================ #
 
 # establish master scrape directory
@@ -31,20 +31,20 @@ if within_bd:
     master_dir = Path('C:/Users', 'diepj09', 'Documents/scrapes')
 else:
     master_dir = Path('/home/jos/bdscraper/scrapes')
-dirs = sorted([d for d in master_dir.iterdir() if d.is_dir()])
+dirs = sorted(
+    [d for d in master_dir.glob('??????-???? - bd-scrape') if d.is_dir()])
 
 # cycle over all scrape directories
 for scrape_dir in dirs:
+    timestamp = scrape_dir.name[:11]
+    if timestamp <= min_timestamp or timestamp >= max_timestamp:
+        # scrape is not within timestamp range; get next one
+        continue
     db_file = scrape_dir / 'scrape.db'
     if not db_file.exists():
         # directory does not contain a scrape database; get next dir
         continue
     db = ScrapeDB(db_file, create=False)
-    timestamp = db.get_par('timestamp')
-    if timestamp <= min_timestamp or timestamp >= max_timestamp:
-        # scrape is not within timestamp range; get next one
-        db.close()
-        continue
 
     setup_file_logging(scrape_dir, log_level=logging.INFO)
 
@@ -64,7 +64,7 @@ for scrape_dir in dirs:
             'Pages', ('Path', 55), ('Title', 35), ('Description', 35),
             ('First h1', 35), ("# h1's", 9), ('Language', 12), ('Modified', 15),
             ('Page type', 20), ('Classes', 25), ('Business', 20),
-            ('Category', 12), ('Page text', 55))
+            ('Category', 12), ('Editorial content', 55))
         start_time = time.time()
         logging.info('Sheet creation started')
         page_num = 0
@@ -75,7 +75,7 @@ for scrape_dir in dirs:
                 (info['path'], info['title'], info['description'],
                  info['first_h1'], info['num_h1s'], info['language'],
                  info['modified'], info['pagetype'], info['classes'],
-                 info['business'], info['category'], page_text(soup)))
+                 info['business'], info['category'], info['ed_content']))
 
             page_time = (time.time() - start_time) / page_num
             togo_time = int((num_pages - page_num) * page_time)

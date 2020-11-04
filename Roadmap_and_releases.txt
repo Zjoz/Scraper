@@ -2,8 +2,10 @@ Coming up
 =========
 
 Enhancements:
-TODO: improve text retrieval from pages
+TODO: restrict harvested links to editorial content (maybe during text retrieval)
+TODO: change name of editorial conten (ed_content) to editorial text (ed_text) 
 TODO: key figures from internal and external links?
+TODO: mail log after completing scrape
 TODO: change starting parameters into command line arguments and options for scrape_site
 
 New functionality:
@@ -16,18 +18,46 @@ TODO: what can we do with robots.txt and sitemap.xml?
 
 Releases
 ========
+Release 2.9 (development)
+    - database                  v2.6
+    - scraper_lib               v2.9 (changed)
+    - scrape_site               v2.7
+    - create_sheets             v2.9
+    - maintain_info_tables      v1.2
+    - bd_viauu                  v1.1
+    - bd_send                   v1.1
+    - bd_receive                v1.0
+    - convert_dbv26_to_dbv27
+    Changes
+        -
+
+Release 2.8 (4-11-2020)
+    - database                  v2.6 (changed)
+    - scraper_lib               v2.8 (changed)
+    - scrape_site               v2.7
+    - create_sheets             v2.9 (changed)
+    - maintain_info_tables      v1.2
+    - bd_viauu                  v1.1
+    - bd_send                   v1.1 (changed)
+    - bd_receive                v1.0
+    - convert_dbv25_to_dbv26         (new)
+    Changes
+        - editorial text extraction improved
+        - ed_content field added to database
+        - new conversion module for updating existing scrape databases
+        - adapted mudules scraper_lib, create_sheets
 
 Release 2.7 (23-10-2020)
-    - database                  v2.5
-    - scraper_lib               v2.8
+    - database                  v2.5 (changed)
+    - scraper_lib               v2.8 (changed)
     - scrape_site               v2.7
-    - create_sheets             v2.8
-    - master_figures            v1.2
+    - create_sheets             v2.8 (changed)
+    - master_figures            v1.2 (changed)
     - maintain_info_tables      v1.2
     - bd_viauu                  v1.1
     - bd_send                   v1.0
     - bd_receive                v1.0
-    - convert_dbv24_to_dbv25
+    - convert_dbv24_to_dbv25         (new)
     Changes
         - meta description field added to database
         - adapted mudules scraper_lib, scrape_site, create_sheets

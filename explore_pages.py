@@ -1,11 +1,12 @@
-"""Module for test and exploring (version 0.4)"""
+"""Module for test and exploring (version 0.5)"""
 
 from pathlib import Path
 from bs4 import BeautifulSoup
-from scraper_lib import ScrapeDB, DataSheet
+from scraper_lib import ScrapeDB, editorial_content
 
 # ============================================================================ #
-timestamp = '201019-0300'   # determines the scrape that is used
+timestamp = '201102-0300'   # determines the scrape that is used
+use_cases = False           # take all pages if False
 within_bd = False           # True when running on the DWB
 # ============================================================================ #
 
@@ -15,6 +16,10 @@ test_paths = (
     ('bld-filter-2', '/nl/intermediairs/intermediairs'),
     ('bld-dv-content-1', '/nl/auto-en-vervoer/content/fijnstoftoeslag-motorrijtuigenbelasting'),
     ('bld-dv-content-2', '/nl/voorlopige-aanslag/content/hoe-weet-ik-of-ik-geld-terugkrijg-of-moet-betalen'),
+    ('bld-dv-content-3', '/nl/btw/content/btw-terugvragen-voor-zonnepanelen-ik-ben-particulier'),
+    ('bld-dv-content-4', '/nl/betalenenontvangen/content/kom-ik-in-aanmerking-voor-kwijtschelding'),
+    ('bld-dv-content-5', '/nl/scheiden/content/aandachtspunten-voor-afspraken-bij-een-scheiding'),
+    ('bld-dv-content-6', '/nl/schenken/content/in-4-stappen-aangifte-doen-schenkbelasting'),
     ('bld-targetGroup-1', '/bldcontentde/belastingdienst/unternehmen/unternehmen'),
     ('bld-tragetGroup-2', '/bldcontenten/belastingdienst/business/business'),
     ('bld-landing-1', '/bldcontentnl/campagnes/landingspaginas/prive/educatie/educatie'),
@@ -52,16 +57,18 @@ db = ScrapeDB(db_file, create=False)
 # get some parameters from the scrape
 root_url = db.get_par('root_url')
 
-for case, path in test_paths:
+if use_cases:
+    cp_iter = test_paths
+else:
+    cp_iter = db.exe('SELECT pagetype, path FROM pages_full')
 
-    info = db.page_full_info(path)
-    soup = BeautifulSoup(info['doc'], features='lxml')
-    description = soup.head.find(attrs={'name': 'description'})
-    if description:
-        description = description['content']
-    else:
-        description = None
-    url = root_url + path
-    print(case, url)
-    print(description)
-    print()
+for case, path in cp_iter:
+
+    if case.startswith('bld-'):
+        info = db.page_full_info(path)
+        page_id = info['page_id']
+        soup = BeautifulSoup(info['doc'], features='lxml')
+        print(root_url + path)
+        content = editorial_content(soup, add_content=True)
+        print(content)
+        print()

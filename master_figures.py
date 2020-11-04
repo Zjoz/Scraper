@@ -9,8 +9,8 @@ from pathlib import Path
 from scraper_lib import ScrapeDB
 
 # ============================================================================ #
-min_timestamp = '200119-0000'  # scrapes before are not processed
-max_timestamp = '201019-2359'  # scrapes after are not processed
+min_timestamp = '201101-0000'  # scrapes before are not processed
+max_timestamp = '201102-2359'  # scrapes after are not processed
 within_bd = False  # True when running on the DWB
 # ============================================================================ #
 

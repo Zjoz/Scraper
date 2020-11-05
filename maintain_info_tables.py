@@ -18,11 +18,10 @@ from pathlib import Path
 from scraper_lib import ScrapeDB, setup_file_logging
 
 # ============================================================================ #
-min_timestamp = '201019-0000'   # scrapes before are not processed
-max_timestamp = '201019-2359'   # scrapes after are not processed
-links_table = False             # repopulate links table
-renew_info = False              # renew extracted and derived information
-derive_info = False             # renew only derived information
+min_timestamp = '200901-0000'   # scrapes before are not processed
+max_timestamp = '201101-2359'   # scrapes after are not processed
+links_table = True              # repopulate links table
+renew_info = False              # repopulate pages_info table
 within_bd = False               # True when running on the DWB
 # ============================================================================ #
 
@@ -49,13 +48,11 @@ for scrape_dir in dirs:
     setup_file_logging(scrape_dir, log_level=logging.INFO)
 
     if links_table:
-        db.fetch_pages_links()
+        db.repop_ed_links()
 
     # update pages_info table
     if renew_info:
         db.extract_pages_info()
-    if renew_info or derive_info:
         db.derive_pages_info()
 
     db.close()
-    logging.disable()

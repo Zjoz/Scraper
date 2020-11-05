@@ -1,4 +1,4 @@
-"""Classes and functions for scraping www.belastingdienst.nl (version 2.8).
+"""Classes and functions for scraping www.belastingdienst.nl (version 2.9).
 
 Classes in this module:
 
@@ -11,11 +11,13 @@ Functions in this module:
 - scrape_page: scrape an html page and create an bs4 representation of it
 - valid_path: validate that path can be used for an html scrape
 - page_links: retrieve all links from the body of a page
-- page_text: retrieve essential text content from a page
+- prune_to_editorial: remove non editorial from an html page
+- flatten_tagbranch_to_navstring: reduce complete tag branch to NavigableString
+- editorial_content: retrieve essential text content from a page
 
 Module public constants:
 
-- dv_types, bib_types, alg_types: sets of pagestypes that are considered to
+- dv_types, bib_types, alg_types: sets of pagetypes that are considered to
     belong to a specific page category
 """
 
@@ -56,7 +58,7 @@ class ScrapeDB:
     Class constants define some of the class behaviour.
     """
 
-    version = '2.6'
+    version = '2.7'
     extracted_fields = [
         ('title', 'TEXT'),
         ('description', 'TEXT'),
@@ -66,7 +68,7 @@ class ScrapeDB:
         ('modified', 'DATE'),
         ('pagetype', 'TEXT'),
         ('classes', 'TEXT'),
-        ('ed_content', 'TEXT')
+        ('ed_text', 'TEXT')
     ]
     derived_fields = [
         ('business', 'TEXT'),
@@ -107,7 +109,7 @@ class ScrapeDB:
                     redir_path TEXT NOT NULL,
                     type       TEXT)''')
             self.exe('''
-                CREATE TABLE links (
+                CREATE TABLE ed_links (
                     page_id	  INTEGER NOT NULL,
                     link_text TEXT,
                     link_id   INTEGER,
@@ -121,7 +123,7 @@ class ScrapeDB:
                     SELECT
                         l.page_id, p1.path AS page_path, l.link_text,
                         l.link_id, p2.path AS link_path, ext_url
-                    FROM links AS l
+                    FROM ed_links AS l
                         JOIN pages AS p1 USING (page_id) 
                         LEFT JOIN pages AS p2 ON link_id = p2.page_id''')
             self.exe('''
@@ -303,16 +305,15 @@ class ScrapeDB:
                 pass
         return value
 
-    def fetch_pages_links(self):
-        """Repopulates the links table with the relevant links of all pages.
+    def repop_ed_links(self):
+        """Repopulate links table with editorial links from all pages.
 
-        This method will take quite some time to complete. With a typical
-        number or 150.000 links and depending on available computer
-        resources, it can run for a quarter of an hour upto more than one hour.
+        The links are extracted from each page after pruning the non editorial
+        branches from the html tree.
         """
 
         # purge links table
-        self.exe('DELETE FROM links')
+        self.exe('DELETE FROM ed_links')
 
         # (re)populate links table
         num_pages = self.num_pages()
@@ -327,8 +328,8 @@ class ScrapeDB:
         for page_id, page_path, page_string in self.pages():
             page_num += 1
             soup = BeautifulSoup(page_string, features='lxml')
-            links = page_links(soup, root_url, root_rel=True,
-                               excl_hdr_ftr=True)
+            pruned_copy = prune_to_editorial(soup, add_content=True)
+            links = page_links(pruned_copy, root_url, root_rel=True)
 
             # cycle over all links of this page
             for link_text, link_url in links:
@@ -343,7 +344,7 @@ class ScrapeDB:
                     # it is considered external
                     link_id = None
                 self.exe('''
-                    INSERT INTO links (page_id, link_text, link_id, ext_url)
+                    INSERT INTO ed_links (page_id, link_text, link_id, ext_url)
                     VALUES (?, ?, ?, ?)''',
                          [page_id, link_text, link_id, link_url])
 
@@ -394,7 +395,7 @@ class ScrapeDB:
             - 'modified': (date) last modification date
             - 'pagetype': (str) type
             - 'classes': (str) classes separated by spaces
-            - 'ed_content': (str) newline seperated editorial content
+            - 'ed_text': (str) newline seperated editorial content
             - 'business': (str) 'belastingen', 'toeslagen' or 'douane'
             - 'category': (str) 'dv', 'bib' or 'alg'
 
@@ -435,7 +436,7 @@ class ScrapeDB:
             - 'modified': (date) last modification date
             - 'pagetype': (str) type
             - 'classes': (str) classes separated by spaces
-            - 'ed_content': (str) newline seperated editorial content
+            - 'ed_text': (str) newline seperated editorial content
             - 'business': (str) 'belastingen', 'toeslagen' or 'douane'
             - 'category': (str) 'dv', 'bib' or 'alg'
 
@@ -457,8 +458,8 @@ class ScrapeDB:
     def extract_pages_info(self):
         """Add table with information extracted from all pages.
 
-        Extracted information concerns data that is available within the page
-        which is stored seperately in the pages table. Storing this data in a
+        Extracted information concerns data that is readily available within
+        the page that is stored in the pages table. Storing this data in a
         seperate table is strictly redundant, but serves faster access.
 
         The fields of the pages_info table are defined by the class constants
@@ -477,7 +478,7 @@ class ScrapeDB:
         - modified: content of <meta name="DCTERMS.modified" content="date" />
         - pagetype: attribute value of <body data-pageType="...">
         - classes: attribute value of <body class="...">
-        - ed_content: editorial content of the page
+        - ed_text: editorial content of the page
 
         The pages_info table accommodates additional fields to contain
         derived information for each page. This is further detailed in the
@@ -613,7 +614,7 @@ class ScrapeDB:
             info['classes'] = ' '.join(classes) if classes else None
 
             # get editorial content
-            info['ed_content'] = editorial_content(soup, add_content=True)
+            info['ed_text'] = editorial_content(soup, add_content=True)
 
             # add info to the database
             fields = ', '.join(info)
@@ -633,7 +634,7 @@ class ScrapeDB:
         logging.info('Extracting info from pages completed\n')
 
     def derive_pages_info(self):
-        """Add table with derived information for all pages.
+        """Add derived information for all pages.
 
         Derived information as such is not available within a page,
         but calculated or interpreted from other information. To derive this
@@ -643,7 +644,7 @@ class ScrapeDB:
 
         The fields in which the derived info is saved, are already available in
         the pages_info table. In case a field is added, the extract_pages_info
-        method can be used to recreate the pages_table, while adding the
+        method can be used to recreate the pages_table, implicitly adding the
         extra fields. The class constants extracted_fields and derived_fields
         define together the fields that are created in the pages_info table.
 
@@ -964,15 +965,13 @@ def scrape_page(root_url, req_url):
         return def_url, soup, page_as_string, redirs
 
 
-def page_links(soup, root_url,
-               root_rel=False, excl_hdr_ftr=True, remove_anchor=True):
-    """Retrieve all links from the body of a page.
+def page_links(soup, root_url, root_rel=False, remove_anchor=True):
+    """Retrieve all links from a BeautifulSoup document.
 
-    The links will be absolute url's or paths relative to root_url.
-    The returned links will be filtered according to the following criteria:
+    The returned links will be absolute url's or paths relative to root_url,
+    and will be filtered according to the following criteria:
 
     - no links from <div id="bld-nojs">
-    - no links from <header> or <footer> if excl_hdr_ftr == True
     - no links containing 'readspeaker' or 'adobe'
     - only links that start with /, // or protocol: (uri-scheme)
 
@@ -981,33 +980,26 @@ def page_links(soup, root_url,
     - anchors are removed if remove_anchor == True
     - links are relative to root_url if root_rel == True, otherwise absolute
 
+    Warning: the soup document is used destructively!
+
     Args:
-        soup (BeautifulSoup): bs4 representation of the page
+        soup (BeautifulSoup): destructively used bs4 document
         root_url (str): the root url with which the page was scraped
         root_rel (bool): return links relative to root_url
-        excl_hdr_ftr (bool): exclude links from header and footer branch
         remove_anchor (bool): remove anchors from links
 
     Returns:
         list of (str, str): list of (link text, link url) tuples
     """
 
-    # make working copy of the doc, since removing branches is destructive
-    sc = copy.copy(soup)
-
     # clear branches from which links are excluded
-    div_nojs = sc.find('div', id='bld-nojs')
+    div_nojs = soup.find('div', id='bld-nojs')
     if div_nojs:
         div_nojs.clear()
-    if excl_hdr_ftr:
-        if sc.body.header:
-            sc.body.header.clear()
-        if sc.body.footer:
-            sc.body.footer.clear()
 
     # get links from remaining soup doc
     links = []
-    for a_tag in sc.body.find_all('a', href=True):
+    for a_tag in soup.body.find_all('a', href=True):
         link = a_tag['href']
         if 'readspeaker' in link or 'adobe' in link:
             continue
@@ -1031,36 +1023,35 @@ def page_links(soup, root_url,
         if link:
             links.append((a_tag.text.strip(), link))
 
-    # remove the working copy of the soup doc
-    sc.decompose()
     return links
 
 
-def editorial_content(soup, add_content=True):
-    """Retrieve essential text content from a page.
+def prune_to_editorial(soup, add_content=True):
+    """Remove non editorial from an html page.
 
-    Next tags are excluded:
+    Any branche of the html tree represented by the soup document that do not
+    contain editorial content will be pruned from the tree. Because these
+    changes are destructive, the pruning will be done on a copy of the
+    document. It is this pruned copy that is returned.
+
+    More specifically, next tags are excluded:
 
     - <head>
     - <header>
     - <footer>
-    - <div id="bld-nojs"> : for situation that javascript is not active
-    - <div class="bld-subnavigatie"> : left side navigation of bib pages
-    - <div class="bld-feedback"> : bottom feedback of content page
+    - <div id="bld-nojs">: for situation that javascript is not active
+    - <div class="bld-subnavigatie">: left side navigation of bib pages
+    - <div class="bld-feedback">: bottom feedback of content page
     - readspeaker buttons
-    - modal dialog for virtual assistant
-
-    Whitespace is normalised and text chunks ar seperated by newlines.
+    - modal dialog for the virtual assistant
 
     Args:
         soup (BeautifulSoup): bs4 representation of a page
         add_content (bool): include content of div class with this name if True
 
     Returns:
-        str: extracted text content of the page
+        BeautifulSoup (pruned copy of the soup document)
     """
-
-    # make working copy of the soup doc, since removing branches is destructive
     sc = copy.copy(soup)
 
     # remove head, header and footer branches
@@ -1075,7 +1066,7 @@ def editorial_content(soup, add_content=True):
     if div_nojs:
         div_nojs.clear()
 
-    # remove sub-navigation
+    # remove sub-navigation (present in bib pages)
     div_subnav = sc.find(class_='bld-subnavigatie')
     if div_subnav:
         div_subnav.clear()
@@ -1085,7 +1076,7 @@ def editorial_content(soup, add_content=True):
     if div_feedback:
         div_feedback.clear()
 
-    # remove additional content if needed
+    # remove additional content if needed (present in some bib pages)
     if not add_content:
         for tag in sc.find_all('div', class_='content_add'):
             tag.clear()
@@ -1098,22 +1089,7 @@ def editorial_content(soup, add_content=True):
     for tag in sc.find_all('div', id='vaModal'):
         tag.clear()
 
-    flatten_tagbranch_to_navstring(sc.html)
-
-    # replace non-breaking spaces with normal ones
-    txt = sc.text.replace(b'\xc2\xa0'.decode(), ' ')
-
-    # subsitute one space for any cluster of whitespace chars (getting rid
-    # of returns, newlines, tabs, spaces, etc.; this is html, you know!)
-    txt = re.sub(r'\s+', ' ', txt)
-
-    # change marked <br>'s to newlines, while reducing multiples seperated by
-    # whitespace only; the final strip() removes potential trailing newlines
-    txt = re.sub(r'\s*(#br#\s*)+\s*', r'\n', txt).strip()
-
-    # remove the working copy of the soup doc
-    sc.decompose()
-    return txt
+    return sc
 
 
 def flatten_tagbranch_to_navstring(tag: Tag):
@@ -1142,21 +1118,19 @@ def flatten_tagbranch_to_navstring(tag: Tag):
         None (tag is replaced in place with one NavigableString)
     """
 
-    # final leaf cases; done with the branch
+    # final leaf cases; done with this branch
     if type(tag) in {NavigableString, Comment, Script, Stylesheet}:
         return
 
+    # has this tag children other then NavigableStrings?
     tag_children = list(tag.children)
     child_types = {type(c) for c in tag_children}
-
-    # are there children other then NavigableStrings?
     if tag_children and child_types != {NavigableString}:
         # flatten all child branches to NavigableStrings
         for c in tag_children:
             flatten_tagbranch_to_navstring(c)
 
-    # at this point all children (if any) are NavigableStrings
-
+    # at this point all children (if any) of tag are NavigableStrings
     tag_name = tag.name
     if tag_name == 'br':
         tag.replace_with('#br#')
@@ -1169,3 +1143,37 @@ def flatten_tagbranch_to_navstring(tag: Tag):
         tag.replace_with(tag.text)
 
     return
+
+
+def editorial_content(soup, add_content=True):
+    """Retrieve essential text content from a page.
+
+    The text is retrieved from a copy of the soup document that is pruned
+    back to its editorial branches. Whitespace of this text is normalised and
+    coherent chunks are seperated by newlines.
+
+    Args:
+        soup (BeautifulSoup): bs4 representation of a page
+        add_content (bool): include content of div class with this name if True
+
+    Returns:
+        str: extracted text content of the page
+    """
+    sc = prune_to_editorial(soup, add_content)
+
+    flatten_tagbranch_to_navstring(sc.html)
+
+    # replace non-breaking spaces with normal ones
+    txt = sc.text.replace(b'\xc2\xa0'.decode(), ' ')
+
+    # subsitute one space for any cluster of whitespace chars (getting rid
+    # of returns, newlines, tabs, spaces, etc.; this is html, you know!)
+    txt = re.sub(r'\s+', ' ', txt)
+
+    # change marked <br>'s to newlines, while reducing multiples seperated by
+    # whitespace only; the final strip() removes potential trailing newlines
+    txt = re.sub(r'\s*(#br#\s*)+\s*', r'\n', txt).strip()
+
+    # remove the working copy of the soup doc
+    sc.decompose()
+    return txt

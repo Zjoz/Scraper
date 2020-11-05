@@ -1,14 +1,12 @@
 import sqlite3
 import logging
-import time
 from pathlib import Path
-from bs4 import BeautifulSoup
 
-from scraper_lib import ScrapeDB, setup_file_logging, editorial_content
+from scraper_lib import ScrapeDB, setup_file_logging
 
 # ============================================================================ #
-min_timestamp = '200831-0000'   # scrapes before are not processed
-max_timestamp = '201101-2359'   # scrapes after are not processed
+min_timestamp = '201102-0000'   # scrapes before are not processed
+max_timestamp = '201102-2359'   # scrapes after are not processed
 within_bd = False               # True when running on the DWB
 # ============================================================================ #
 
@@ -35,17 +33,17 @@ for scrape_dir in dirs:
     setup_file_logging(scrape_dir, log_level=logging.INFO)
     db_version = dbo.execute(
         'SELECT value FROM parameters WHERE name = "db_version"').fetchone()[0]
-    if db_version != '2.5':
-        logging.info(f'Database v{db_version} can not be converted to v2.6\n')
+    if db_version != '2.6':
+        logging.info(f'Database v{db_version} can not be converted to v2.7\n')
         dbo.close()
         continue
 
-    logging.info('Database conversion to v2.6 started')
+    logging.info('Database conversion to v2.7 started')
 
     # rename old db and reconnect
     dbo.close()
-    dbo_file = dbo_file.rename(scrape_dir / 'scrape.v25.db')
-    logging.info('Database v2.5 saved as "scrape.v25.db"')
+    dbo_file = dbo_file.rename(scrape_dir / 'scrape.v26.db')
+    logging.info('Database v2.6 saved as "scrape.v26.db"')
 
     # create and connect new db
     dbn_path = scrape_dir / 'scrape.db'
@@ -59,17 +57,17 @@ for scrape_dir in dirs:
         if name == 'db_version':
             continue
         dbn.upd_par(name, value)
-    logging.info('Table parameters converted to db v2.6')
+    logging.info('Table parameters converted to db v2.7')
 
     # copy pages table
     dbn.exe('INSERT INTO main.pages SELECT * FROM old.pages')
-    logging.info('Table pages copied to db v2.6')
+    logging.info('Table pages copied to db v2.7')
 
     # copy redirs table
     dbn.exe('INSERT INTO main.redirs SELECT * FROM old.redirs')
     logging.info('Table redirs copied to db v2.6')
 
-    # create new pages_info table (ed_content field will be added)
+    # create new pages_info table (ed_content will be renamed to ed_text)
     fields = dbn.extracted_fields + dbn.derived_fields
     columns = ', '.join([f'{f[0]} {f[1]}' for f in fields])
     dbn.exe(f'''
@@ -85,42 +83,14 @@ for scrape_dir in dirs:
             SELECT *
             FROM pages
             LEFT JOIN pages_info USING (page_id)''')
+    dbn.exe('INSERT INTO main.pages_info SELECT * FROM old.pages_info')
+    logging.info('Table pages_info copied to db v2.7')
 
-    # copy fields from old pages_info table into the new one
-    qry = "PRAGMA old.table_info('pages_info')"
-    fields = [r[1] for r in dbn.exe(qry).fetchall()]
-    fields_str = ', '.join(fields)
-    dbn.exe(f'''
-        INSERT INTO main.pages_info ({fields_str})
-            SELECT {fields_str}
-            FROM old.pages_info''')
-
-    # add description field for all pages
-    num_pages = dbn.num_pages()
-    start_time = time.time()
-    page_num = 0
-    for page_id, page_path, page_string in dbn.pages():
-        page_num += 1
-        soup = BeautifulSoup(page_string, features='lxml')
-        ed_content = editorial_content(soup, add_content=True)
-        dbn.exe('UPDATE pages_info SET ed_content = ? WHERE page_id = ?',
-                [ed_content, page_id])
-        if page_num % 500 == 0:
-            page_time = (time.time() - start_time) / page_num
-            togo_time = int((num_pages - page_num) * page_time)
-            print(
-                f'adding ed_content field to scrape database of {timestamp} '
-                f'- togo: {num_pages - page_num} pages / '
-                f'{togo_time // 60}:{togo_time % 60:02} min')
-
-    logging.info(
-        'Table pages_info copied to db v2.6 while adding ed_content field')
-
-    # copy Links table
-    dbn.exe('INSERT INTO main.links SELECT * FROM old.links')
-    logging.info('Tables links copied to db v2.6')
+    # repopulate links table
+    dbn.repop_ed_links()
 
     dbn.exe('VACUUM')
     dbn.close()
 
-    logging.info('Database conversion to v2.6 concluded\n')
+    logging.info('Database conversion to v2.7 concluded\n')
+    print(f'database conversion of {timestamp} concluded')

@@ -1,4 +1,4 @@
-"""Extract data to spreadsheets for a range of stored scrapes (version 2.9).
+"""Extract data to spreadsheets for a range of stored scrapes (version 2.10).
 
 Since the real labour is done in the classes and functions of the
 scraper_lib module, the code can stay at a rather high level to keep a clear
@@ -16,10 +16,10 @@ from bs4 import BeautifulSoup
 from scraper_lib import ScrapeDB, DataSheet, setup_file_logging, editorial_content
 
 # ============================================================================ #
-min_timestamp = '201102-0000'   # scrapes before are not processed
-max_timestamp = '201102-2359'   # scrapes after are not processed
-pages_sheet = True              # (re)create pages.xlsx
-links_sheet = False             # (re)create links.xlsx
+min_timestamp = '201012-0000'   # scrapes before are not processed
+max_timestamp = '201012-2359'   # scrapes after are not processed
+pages_sheet = False             # (re)create pages.xlsx
+links_sheet = True              # (re)create links.xlsx
 redirs_sheet = False            # (re)create redirs.xlsx
 renew_info = False              # renew extracted and derived information
 derive_info = False             # renew only derived information
@@ -64,7 +64,7 @@ for scrape_dir in dirs:
             'Pages', ('Path', 55), ('Title', 35), ('Description', 35),
             ('First h1', 35), ("# h1's", 9), ('Language', 12), ('Modified', 15),
             ('Page type', 20), ('Classes', 25), ('Business', 20),
-            ('Category', 12), ('Editorial content', 55))
+            ('Category', 12), ('Editorial text', 55))
         start_time = time.time()
         logging.info('Sheet creation started')
         page_num = 0
@@ -75,7 +75,7 @@ for scrape_dir in dirs:
                 (info['path'], info['title'], info['description'],
                  info['first_h1'], info['num_h1s'], info['language'],
                  info['modified'], info['pagetype'], info['classes'],
-                 info['business'], info['category'], info['ed_content']))
+                 info['business'], info['category'], info['ed_text']))
 
             page_time = (time.time() - start_time) / page_num
             togo_time = int((num_pages - page_num) * page_time)

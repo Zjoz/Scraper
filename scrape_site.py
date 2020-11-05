@@ -1,4 +1,4 @@
-"""Scrape www.belastingdienst.nl and store the results (version 2.7).
+"""Scrape www.belastingdienst.nl and store the results (version 2.8).
 
 Since scraping is not always possible from within the belastingdienst
 organisation, this module is supposed to run on a private pc with an open
@@ -33,7 +33,7 @@ root_url of a scrape):
         redir_path (text): path to where the request was directed
         type (text): nature of the redirect
 
-    When parameter add_info is True, the next table and view are also created:
+    When parameter add_info is True, the next table and view are created also:
 
     table pages_info, with columns
         page_id (integer): page_id, key into pages table
@@ -43,6 +43,7 @@ root_url of a scrape):
         first_h1 (text): text of the first <h1> tag
         language (text): language
         modified (date): last modification date
+        ed_content (text): editorial content of page
         pagetype (text): page type
         classes (text): classes of the page separated by spaces
 
@@ -65,9 +66,8 @@ root_url = 'https://www.belastingdienst.nl/wps/wcm/connect'
 start_path = '/nl/home'
 max_paths = 15000           # total some 10000 actual (paths, not pages)
 links_table = True          # populate links table
-extract_info = True         # add extracted_info
-derive_info = True          # add derived_info (only when also extract)
-publish = True
+add_info = True             # add and populate pages_info table
+publish = True              # move the scrape results to publ_dir
 publ_dir = '/var/www/bds/scrapes'
 # ============================================================================ #
 
@@ -137,7 +137,7 @@ while paths_todo and num_done < max_paths:
     # add relevant links to paths_todo list (include links from header and
     # footer to trace all pages)
     for l_text, l_path in page_links(soup, root_url, root_rel=True,
-                                     excl_hdr_ftr=False, remove_anchor=True):
+                                     remove_anchor=True):
         if l_path.startswith('/'):
             # link within scope
             if l_path not in (paths_todo | paths_done) and valid_path(l_path):
@@ -156,12 +156,11 @@ logging.info(f'Site scrape finished in {elapsed//60}:{elapsed % 60:02} min')
 logging.info(f'    pages: {db.num_pages()}\n')
 
 if links_table:
-    db.fetch_pages_links()
+    db.repop_ed_links()
 
-if extract_info:
+if add_info:
     db.extract_pages_info()
-    if derive_info:
-        db.derive_pages_info()
+    db.derive_pages_info()
 
 db.close()
 

@@ -110,4 +110,4 @@ for scrape_dir in dirs:
     db.close()
 
     logging.info('Sheet creation completed\n')
-    logging.disable()
+    print(f'Sheet creation of {timestamp} completed')

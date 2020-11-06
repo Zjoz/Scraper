@@ -16,6 +16,18 @@ TODO: what can we do with robots.txt and sitemap.xml?
 
 Releases
 ========
+Release 2.10 (development)
+    - database                  v2.7
+    - scraper_lib               v2.9
+    - scrape_site               v2.8
+    - create_sheets             v2.10
+    - maintain_info_tables      v1.2
+    - bd_viauu                  v1.1
+    - bd_send                   v1.1
+    - bd_receive                v1.0
+    Changes
+        -
+
 Release 2.9 (5-11-2020)
     - database                  v2.7    (changed)
     - scraper_lib               v2.9    (changed)

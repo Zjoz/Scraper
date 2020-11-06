@@ -8,6 +8,8 @@ from scraper_lib import ScrapeDB, setup_file_logging
 min_timestamp = '201102-0000'   # scrapes before are not processed
 max_timestamp = '201102-2359'   # scrapes after are not processed
 within_bd = False               # True when running on the DWB
+v_old = '2.6'                   # old db version
+v_new = '2.7'                   # new db version
 # ============================================================================ #
 
 # establish scrape directories
@@ -33,17 +35,20 @@ for scrape_dir in dirs:
     setup_file_logging(scrape_dir, log_level=logging.INFO)
     db_version = dbo.execute(
         'SELECT value FROM parameters WHERE name = "db_version"').fetchone()[0]
-    if db_version != '2.6':
-        logging.info(f'Database v{db_version} can not be converted to v2.7\n')
+    if db_version != v_old:
+        logging.info(
+            f'Database v{db_version} can not be converted to v{v_new}\n')
         dbo.close()
         continue
 
-    logging.info('Database conversion to v2.7 started')
+    logging.info(f'Database conversion to v{v_new} started')
 
     # rename old db and reconnect
     dbo.close()
-    dbo_file = dbo_file.rename(scrape_dir / 'scrape.v26.db')
-    logging.info('Database v2.6 saved as "scrape.v26.db"')
+    dbo_file = dbo_file.rename(
+        scrape_dir / f'scrape.{v_old.replace(".", "")}.db')
+    logging.info(
+        f'Database v{v_old} saved as "scrape.{v_old.replace(".", "")}.db"')
 
     # create and connect new db
     dbn_path = scrape_dir / 'scrape.db'
@@ -57,15 +62,15 @@ for scrape_dir in dirs:
         if name == 'db_version':
             continue
         dbn.upd_par(name, value)
-    logging.info('Table parameters converted to db v2.7')
+    logging.info(f'Table parameters converted to db v{v_new}')
 
     # copy pages table
     dbn.exe('INSERT INTO main.pages SELECT * FROM old.pages')
-    logging.info('Table pages copied to db v2.7')
+    logging.info(f'Table pages copied to db v{v_new}')
 
     # copy redirs table
     dbn.exe('INSERT INTO main.redirs SELECT * FROM old.redirs')
-    logging.info('Table redirs copied to db v2.6')
+    logging.info(f'Table redirs copied to db v{v_new}')
 
     # create new pages_info table (ed_content will be renamed to ed_text)
     fields = dbn.extracted_fields + dbn.derived_fields
@@ -84,7 +89,7 @@ for scrape_dir in dirs:
             FROM pages
             LEFT JOIN pages_info USING (page_id)''')
     dbn.exe('INSERT INTO main.pages_info SELECT * FROM old.pages_info')
-    logging.info('Table pages_info copied to db v2.7')
+    logging.info(f'Table pages_info copied to db v{v_new}')
 
     # repopulate links table
     dbn.repop_ed_links()
@@ -92,5 +97,5 @@ for scrape_dir in dirs:
     dbn.exe('VACUUM')
     dbn.close()
 
-    logging.info('Database conversion to v2.7 concluded\n')
+    logging.info(f'Database conversion to v{v_new} concluded\n')
     print(f'database conversion of {timestamp} concluded')

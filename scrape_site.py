@@ -1,4 +1,4 @@
-"""Scrape www.belastingdienst.nl and store the results (version 2.8).
+"""Scrape www.belastingdienst.nl and store the results (version 2.9).
 
 Since scraping is not always possible from within the belastingdienst
 organisation, this module is supposed to run on a private pc with an open
@@ -43,7 +43,8 @@ root_url of a scrape):
         first_h1 (text): text of the first <h1> tag
         language (text): language
         modified (date): last modification date
-        ed_content (text): editorial content of page
+        ed_text (text): editorial text of page
+        aut_text (text): automated text of page
         pagetype (text): page type
         classes (text): classes of the page separated by spaces
 
@@ -58,7 +59,7 @@ from requests import RequestException
 from pathlib import Path
 
 from scraper_lib import ScrapeDB, setup_file_logging
-from scraper_lib import scrape_page, page_links, valid_path
+from scraper_lib import scrape_page, page_links
 from bd_viauu import bintouu, split_uufile
 
 # ============================================================================ #
@@ -138,10 +139,16 @@ while paths_todo and num_done < max_paths:
     # footer to trace all pages)
     for l_text, l_path in page_links(soup, root_url, root_rel=True,
                                      remove_anchor=True):
-        if l_path.startswith('/'):
-            # link within scope
-            if l_path not in (paths_todo | paths_done) and valid_path(l_path):
-                paths_todo.add(l_path)
+        if not l_path.startswith('/'):
+            # link not in scope
+            continue
+        if l_path in (paths_todo | paths_done):
+            # already handled
+            continue
+        if l_path.endswith('.xml'):
+            logging.debug('Path ending in .xml: %s' % l_path)
+            continue
+        paths_todo.add(l_path)
 
     # time cycles and print progress and prognosis
     num_todo = min(len(paths_todo), max_paths - num_done)
@@ -153,7 +160,7 @@ while paths_todo and num_done < max_paths:
 
 elapsed = int(time.time() - start_time)
 logging.info(f'Site scrape finished in {elapsed//60}:{elapsed % 60:02} min')
-logging.info(f'    pages: {db.num_pages()}\n')
+logging.info(f'    pages: {db.num_pages()}')
 
 if links_table:
     db.repop_ed_links()

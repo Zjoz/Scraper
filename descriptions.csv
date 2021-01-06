@@ -1,52 +1,54 @@
-pages,pagina’s
-pages_lang_nl,nederlandstalige pagina’s
-pages_lang_en,engelstalige pagina’s
-pages_lang_de,duitstalige pagina’s
-pages_lang_None,pagina’s met onbekende taal
-pages_buss_belastingen,pagina’s voor belastingen
-pages_buss_douane,pagina’s voor douane
-pages_buss_toeslagen,pagina’s voor toeslagen
-pages_buss_None,pagina’s voor onbekend organisatieonderdeel
-pages_cat_dv,dienstverleningspagina's
-pages_cat_bib,bibliotheek pagina's
-pages_cat_alg,algemene pagina's
-pages_cat_None,pagina's met onbekende categorie
-pages_type_bld-filter,filterpagina’s
-pages_type_bld-dv-content,topic pagina’s
-pages_type_bld-targetGroup,"voormalige startpagina's particulier, zakelijk, intermediairs en douane voor bedrijven"
-pages_type_bld-landing,landingspagina’s (bibliotheek)
-pages_type_bld-bd,pagina’s met belangrijke datums
-pages_type_bld-sitemap,thema pagina’s (bibliotheek)
-pages_type_bld-overview,overzichtspagina’s (bibliotheek)
-pages_type_bld-cluster,clusterpagina’s (bibliotheek)
-pages_type_bld-direction,wegwijzerpagina’s (bibliotheek)
-pages_type_bld-target,doelpagina’s (bibliotheek contentpagina’s)
-pages_type_bld-outage,pagina’s met verstoringsberichten
-pages_type_bld-newsItem,pagina’s met nieuwsberichten
-pages_type_bld-wrapper,voorlooppagina’s
-pages_type_bld-iahWrapper,voorlooppagina’s interactieve hulpmiddelen
-pages_type_bld-concept,pagina’s met begrippen
-pages_type_bld-faq,pagina’s met vragen en antwoorden
-pages_type_None,pagina’s van onbekend type
-redirs,url’s die worden doorverwezen
-redirs_301,url’s die permanent worden doorverwezen
-redirs_302,url’s die tijdelijk worden doorverwezen
-redirs_server,url’s die vanuit de server worden doorverwezen
-redirs_client,url’s die via een client-side refresh worden doorverwezen
-redirs_301_slash,url’s die permanent worden doorverwezen naar een url met slechts een slash verschil
-redirs_302_slash,url’s die tijdelijk worden doorverwezen naar een url met slechts een slash verschil
-redirs_server_slash,url’s die via een client-side refresh worden doorverwezen naar een url met slechts een slash verschil
-url-aliases,url’s die een alias zijn voor de feitelijke url
-url-aliases_1x,url’s met één alias
-url-aliases_2x,url’s met twee aliassen
-url-aliases_3x,url’s met drie aliassen
-pages_multi-h1,pagina’s met meerdere <h1> tags
-pages_multi-h1_bld-dv-content,dv-contentpagina’s met meerdere <h1> tags
-pages_multi-h1_bld-filter,filterpagina’s met meerdere <h1> tags
-pages_multi-h1_bld-landing,landingspagina’s met meerdere <h1> tags
-pages_multi-h1_None,onbekend type pagina’s met meerdere <h1> tags
-pages_no-h1,pagina’s zonder <h1> tag
-pages_no-title,pagina’s zonder <title> tag
-pages_dupl-title,pagina's met niet unieke <title> tag
-pages_no-descr,pagina's zonder of met lege <meta> description tag
-pages_long-descr,pagina's met <meta> description langer dan 160 tekens
+name,dutch,english
+pages,pagina’s,pages
+pages_lang_nl,nederlandstalige pagina’s,Dutch pages
+pages_lang_en,engelstalige pagina’s,English pages
+pages_lang_de,duitstalige pagina’s,German pages
+pages_lang_None,pagina’s met onbekende taal,pages in unknown language
+pages_buss_belastingen,pagina’s voor belastingen,pages for tax division
+pages_buss_douane,pagina’s voor douane,pages for customs division
+pages_buss_toeslagen,pagina’s voor toeslagen,pages for benefits division
+pages_buss_None,pagina’s voor onbekend organisatieonderdeel,pages for unknown organisational division
+pages_cat_dv,dienstverleningspagina's,service pages
+pages_cat_bib,bibliotheek pagina's,library pages
+pages_cat_alg,algemene pagina's,general pages
+pages_cat_unknown,pagina's met onbekende categorie,pages with unknown category
+pages_cat_None,pagina's met onbekende categorie,pages with unknown category
+pages_type_bld-filter,filterpagina’s,filter pages
+pages_type_bld-dv-content,topic pagina’s,topic pages
+pages_type_bld-targetGroup,"voormalige startpagina's particulier, zakelijk, intermediairs en douane voor bedrijven","former starting pages for individuals, business, intermediaries and customs for business"
+pages_type_bld-landing,landingspagina’s (bibliotheek),landing pages (library)
+pages_type_bld-bd,pagina’s met belangrijke datums,pages with important dates
+pages_type_bld-sitemap,thema pagina’s (bibliotheek),thematic pages (library)
+pages_type_bld-overview,overzichtspagina’s (bibliotheek),overview pages (library)
+pages_type_bld-cluster,clusterpagina’s (bibliotheek),cluster pages (library)
+pages_type_bld-direction,wegwijzerpagina’s (bibliotheek),direction pages (library)
+pages_type_bld-target,doelpagina’s (bibliotheek contentpagina’s),target (library content) pages
+pages_type_bld-outage,pagina’s met verstoringsberichten,pages with outages
+pages_type_bld-newsItem,pagina’s met nieuwsberichten,pages with news items
+pages_type_bld-wrapper,voorlooppagina’s,wrapper pages
+pages_type_bld-iahWrapper,voorlooppagina’s interactieve hulpmiddelen,wrapper pages for interactive tools
+pages_type_bld-concept,pagina’s met begrippen,pages with conceptual topics
+pages_type_bld-faq,pagina’s met vragen en antwoorden,pages with questions and answers
+pages_type_None,pagina’s van onbekend type,pages of unknown type
+redirs,url’s die worden doorverwezen,url’s that are redirected
+redirs_301,url’s die permanent worden doorverwezen,url’s that are permanently redirected
+redirs_302,url’s die tijdelijk worden doorverwezen,url’s that are temporarily redirected
+redirs_server,url’s die vanuit de server worden doorverwezen,url’s with server based redirection
+redirs_client,url’s die via een client-side refresh worden doorverwezen,url’s with client side redirection
+redirs_301_slash,url’s die permanent worden doorverwezen naar een url met slechts een slash verschil,url’s that are permanently redirected to a url with only one slash difference
+redirs_302_slash,url’s die tijdelijk worden doorverwezen naar een url met slechts een slash verschil,url’s that are temporarily redirected to a url with only one slash difference
+redirs_server_slash,url’s die via een client-side refresh worden doorverwezen naar een url met slechts een slash verschil,url’s with client side redirection to a url with only one slash difference
+url-aliases,url’s die een alias zijn voor de feitelijke url,url’s that alias the authoritative url
+url-aliases_1x,url’s met één alias,url’s with one alias
+url-aliases_2x,url’s met twee aliassen,url’s with two aliases
+url-aliases_3x,url’s met drie aliassen,url’s with three aliases
+pages_h1_multi,pagina’s met meerdere <h1> tags,pages with more than one <h1> tag
+pages_h1_multi_bld-dv-content,dv-contentpagina’s met meerdere <h1> tags,topic pages with more than one <h1> tag
+pages_h1_multi_bld-filter,filterpagina’s met meerdere <h1> tags,filter pages with more than one <h1> tag
+pages_h1_multi_bld-landing,landingspagina’s met meerdere <h1> tags,landing pages with more than one <h1> tag
+pages_h1_multi_None,onbekend type pagina’s met meerdere <h1> tags,pages of unknown type with more than one <h1> tag
+pages_h1_no,pagina’s zonder <h1> tag,pages without <h1> tag
+pages_title_no,pagina’s zonder of met lege <title> tag,pages without or with empty <title> tag
+pages_title_dupl,pagina's met niet unieke <title> tag,pages with non-unique <title> tag
+pages_descr_no,pagina's zonder of met lege <meta> description tag,pages without or with empty <meta> description tag
+pages_descr_long,pagina's met <meta> description langer dan 160 tekens,pages with <meta> description longer than 160 characters

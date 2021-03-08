@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from bd_viauu import bintouu, split_uufile
-from scraper_lib import scrape_dirs
+from prod_scraper_lib import scrape_dirs
 
 # TODO: add master database
 

@@ -1,25 +1,78 @@
 Coming up
 =========
 
+Bugs
+
+Improvements
+TODO: administer the short url's and add newly found to the list
+
 Site changes:
 TODO: add campaign page when available
 
 Enhancements:
-TODO: pack scrape total as zip for transfer
-TODO: update master database after new scrape
-TODO: mail log after completing scrape
-TODO: change scrape_site starting parameters into command line arguments and options
+TODO: add key figure for orphan pages
+TODO: add key figure for wrappers that are not linked
 
 New functionality:
-TODO: add short url's to scrape (/eigenwoning, /customs, /individuals, etc)
 TODO: retrieve usage data of pages via Matomo API to identify poor used pages
-
-Ideas:
-TODO: what can we do with robots.txt and sitemap.xml?
+TODO: get all url's from Matomo that could be short url's and test if they are available
 
 
 Releases
 ========
+Release 3.1 (maintenance)
+    - database                  v3.0
+    - scraper_lib.py            v3.0.0
+    - scrape_site.py            v3.0
+    - bd_viauu                  v1.1
+    - bd_send                   v1.2
+    - bd_receive                v1.1
+    Changes
+
+Release 3.0 (1-3-2021)
+    - database                  v3.0        (changed)
+    - scraper_lib.py            v3.0.0      (changed)
+    - scrape_site.py            v3.0
+    - convert_all.py                        (new)
+    - bd_viauu                  v1.1
+    - bd_send                   v1.2
+    - bd_receive                v1.1
+    Changes
+        General
+            - url's with which a page is registered within IWCM are now named wcm_url's
+            - scrape version now consist of three parts: major.minor.maintenance (now 3.0.0)
+            - added version number for content/layout of a scrape rapport (now 1.0.0)
+        Scrape method/algorithm
+            - start scrape with start_urls.txt to handle short url's
+            - start scrape with sitemap.xml via robots.txt
+            - files that are used to start a scrape are saved (start_urls.txt, robots.txt, sitemap.xml)
+            - response of external links is tested and registered
+            - editorial links are registered during scraping (used to be afterwards)
+            - send mail after completing a scrape
+            - scraper can handle degenerated pages, even without a head
+            - algorithm for categorizing wrapper pages is more robust and handles all
+            - editorial links are no longer substituted to their corresponding wcm url's
+        Database
+            - page_id's are universal
+            - new parameters in scrape database: scraper_version, scrape_type and primed_by universal_page_ids
+            - scrape type can now be both monthly and weekly
+            - added links table in scrape database
+            - added field with link response in ed_links table
+            - seq_nr field added to descriptions table in the master database to enable ordering key figures
+        Reports
+            - key figures have fixed order
+            - added several key figures for editorial links
+            - report_version and report_creation are added to the parameters sheet
+            - added field for link status of editorial links (only used for external links)
+        Coding
+            - no separation of SQL en Python (dropped classes tot encapsulate a database and report workbook)
+            - all code in one module: scraper_lib.py
+            - added function to handle a complete scrape, including updating scrape_master and generate report
+            - added run-file module (scrape_site.py) to enable complete scrape control via command line
+            - more extensive in-line documentation to be used with pdoc
+            - enhanced modular approach for post-processing a basic scrape
+            - simplified some coding structures or algorithms to improve maintainability
+
 Release 2.10 (6-1-2021)
     - database                  v2.8    (changed)
     - scraper_lib               v2.10   (changed)
@@ -80,7 +133,7 @@ Release 2.8 (4-11-2020)
         - editorial text extraction improved
         - ed_content field added to database
         - new conversion module for updating existing scrape databases
-        - adapted mudules scraper_lib, create_sheets
+        - adapted modules scraper_lib, create_sheets
 
 Release 2.7 (23-10-2020)
     - database                  v2.5    (changed)
@@ -95,7 +148,7 @@ Release 2.7 (23-10-2020)
     - convert_dbv24_to_dbv25            (new)
     Changes
         - meta description field added to database
-        - adapted mudules scraper_lib, scrape_site, create_sheets
+        - adapted modules scraper_lib, scrape_site, create_sheets
         - conversion module for updating existing scrape databases
         - added 3 key figures to master database: pages_dupl-title, pages_no-descr, pages_long-descr
 

@@ -1,7 +1,6 @@
 """Library to prepare files for text-based transmission (version 1.1)."""
 
 import binascii
-import re
 from pathlib import Path
 from math import ceil
 
@@ -61,7 +60,7 @@ def split_uufile(uu_file, max_mb=15, delete=True):
     """Split a uu-encoded file in parts.
 
     The part files are written to the same directory as the uu-encoded file.
-    The names of these part files have the next format: <in_file>-<nn>.txt,
+    The names of these part files have the next format: <uu_file>-<nn>.txt,
     where <nn> is 01 for the first part, 02 for the second, and so on.
 
     Warning: In case the use of this function will result in more then 25

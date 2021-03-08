@@ -2,7 +2,7 @@
 
 from pathlib import Path
 from bd_viauu import merge_uufiles, uutobin
-from scraper_lib import scrape_dirs
+from prod_scraper_lib import scrape_dirs
 
 # ============================================================================ #
 min_timestamp = '201012-0000'   # scrapes before are not processed
